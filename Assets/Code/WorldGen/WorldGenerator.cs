@@ -1,10 +1,4 @@
-using System.Collections;
-using System.Collections.Generic;
-using Unity.VisualScripting;
-using UnityEditorInternal;
 using UnityEngine;
-using UnityEngine.XR;
-using static UnityEditor.PlayerSettings.SplashScreen;
 
 public class WorldGenerator : MonoBehaviour
 {
@@ -14,8 +8,18 @@ public class WorldGenerator : MonoBehaviour
     [SerializeField] private int _numRivers;
     [SerializeField] private Vector2Int _riverSize;
 
+    [Range(0.0f,1.0f)]
+    [SerializeField] private float _temperatureNoiseStrength;
+    [Range(0.0f, 1.0f)]
+    [SerializeField] private float _heightNoiseStrength;
+
     [SerializeField] private NoiseParameters[] _noiseParameters;
     [SerializeField] private BiomeData[] _biomeData;
+
+    [SerializeField] private int _TectonicPlatesNum;
+    [SerializeField] private int _smoothingRadius;
+
+    [SerializeField] private int _edgeThickness;
 
     [SerializeField] public bool _autoUpdate;
     [SerializeField] private enum DrawMode {FinishedMap, TemperatureMap, MoistureMap, HeightMap, VegetationMap};
@@ -41,7 +45,8 @@ public class WorldGenerator : MonoBehaviour
         CreateSprite();
         //GenerateLandMap();
         GenerateBiomeMaps();
-        GenerateRivers();
+        //GenerateRivers();
+        GenerateOutline();
     }
 
     public void DrawMapInInspector()
@@ -168,6 +173,15 @@ public class WorldGenerator : MonoBehaviour
     private void GenerateTemperatureMap()
     {
         _temperatureMap = Noise.GenerateNoiseMap(_worldSize.x, _worldSize.y, _noiseParameters[2]);
+        float halfWorldSize = (float)_worldSize.y / 2;
+        for (int y = 0; y < _worldSize.y; y++)
+        {
+            for (int x = 0; x < _worldSize.x; x++)
+            {
+                float gradientValue = 1 - Mathf.Abs((y - halfWorldSize) / halfWorldSize);
+                _temperatureMap[x, y] = Mathf.Clamp01((_temperatureMap[x,y] * _temperatureNoiseStrength) + gradientValue * (1 - _temperatureNoiseStrength));
+            }
+        }
     }
 
     private void GenerateMoistureMap()
@@ -182,19 +196,15 @@ public class WorldGenerator : MonoBehaviour
 
     private void GenerateHeightMap()
     {
-        Vector2 worldCenter = _worldSize / 2;
-        float maxDistance = worldCenter.x * _islandSize;
         _heightMap = Noise.GenerateNoiseMap(_worldSize.x, _worldSize.y, _noiseParameters[0]);
+        float[,] voronoiNoiseMap = VoronoiNoise.GenerateNoiseMap(_worldSize.x, _worldSize.y, _TectonicPlatesNum, 1488, _smoothingRadius);
         for (int y = 0; y < _worldSize.y; y++)
         {
             for (int x = 0; x < _worldSize.x; x++)
             {
-                float dx = worldCenter.x - x;
-                float dy = worldCenter.y - y;
-                float distance = Mathf.Sqrt(dx * dx + dy * dy);
-                float p = 1 - ((distance - maxDistance) / maxDistance);
-                float scalingFactor = distance <= maxDistance ? 1 : p;
-                _heightMap[x, y] = Mathf.Clamp01(_heightMap[x, y] * scalingFactor); 
+                _heightMap[x, y] = (_heightMap[x, y] * _heightNoiseStrength) + (voronoiNoiseMap[x,y] * (1 - _heightNoiseStrength));
+                //_heightMap[x, y] = Mathf.Clamp01(_heightMap[x, y] + 1 - _heightNoiseStrength) * Mathf.Clamp01(voronoiNoiseMap[x,y] + _heightNoiseStrength);
+                //_heightMap[x, y] = _heightMap[x, y] * voronoiNoiseMap[x,y];
             }
         }
     }
@@ -259,6 +269,44 @@ public class WorldGenerator : MonoBehaviour
             Debug.Log("HighTechSafetyMeasures saved you");
 
         return true;
+    }
+
+    private void GenerateOutline()
+    {
+        for (int y = 0; y < _worldSize.y; y++)
+        {
+            for (int x = 0; x < _worldSize.y; x++)
+            {
+                if (IsOnEdge(x, y, _edgeThickness))
+                    _world.SetPixel(x, y, Color.black);
+            }
+        }
+        _world.Apply();
+    }
+
+    private bool IsOnEdge(int x, int y, int edgeThickness)
+    {
+        Color currentColor = _world.GetPixel(x, y);
+
+        if(currentColor == _biomeData[0].biomeColor || currentColor == _biomeData[1].biomeColor)
+            return false;
+
+        for (int dx = -edgeThickness; dx <= edgeThickness; dx++)
+        {
+            for (int dy = -edgeThickness; dy <= edgeThickness; dy++)
+            {
+                int nx = x + dx;
+                int ny = y + dy;
+                if (nx >= 0 && nx < _worldSize.x && ny >= 0 && ny < _worldSize.y)
+                {
+                    if ((dx != 0 || dy != 0) && (_world.GetPixel(nx,ny) == _biomeData[0].biomeColor || _world.GetPixel(nx, ny) == _biomeData[1].biomeColor))
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
     }
 
     private void CreateSprite()
