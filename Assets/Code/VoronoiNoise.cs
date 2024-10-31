@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using Unity.Burst;
 using UnityEngine;
 
@@ -21,6 +22,7 @@ public static class VoronoiNoise
         }
 
         noiseMap = CalculateRegions(width, height, quadtree, regions);
+        regions = RecalculateRegions(width,height,regions,noiseMap);
         noiseMap = CalculateGradients(width, height, noiseMap, regions);
         noiseMap = SmoothEdges(width, height, noiseMap, smoothingRadius);
 
@@ -123,6 +125,41 @@ public static class VoronoiNoise
             regions[i] = newRegion;
         }
 
+        return regions;
+    }
+
+    private static RegionData[] RecalculateRegions(int width, int height, RegionData[] regions, float[,] regionsMap)
+    {
+        Cell[] cells = new Cell[regions.Length];
+        for (int i = 0; i < regions.Length; i++)
+        {
+            cells[i] = new Cell();
+            cells[i].points = new List<Vector2>();
+        }
+
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                int id = (int)regionsMap[x,y];
+                cells[id].points.Add(new Vector2(x, y));
+            }
+        }
+
+        for (int i = 0; i < regions.Length; i++)
+        {
+            float centerX = cells[i].points.Average(p => p.x);
+            float centerY = cells[i].points.Average(p => p.y);
+            regions[i].position = new Vector2(centerX, centerY);
+
+            float maxDistance = float.MinValue;
+            foreach (Vector2 point in cells[i].points)
+            {
+                float distance = Vector2.Distance(point, regions[i].position);
+                maxDistance = Math.Max(maxDistance, distance);
+            }
+            regions[i].maxDistance = maxDistance;
+        }
         return regions;
     }
 
@@ -270,4 +307,9 @@ public struct RegionData
         this.maxDistance = maxDistance;
         this.isUnderwater = isUnderwater;
     }
+}
+
+public struct Cell
+{
+    public List<Vector2> points;
 }
