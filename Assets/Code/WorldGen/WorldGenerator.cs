@@ -6,7 +6,9 @@ public class WorldGenerator : MonoBehaviour
     [SerializeField] private float _islandSize;
 
     [SerializeField] private int _numRivers;
-    [SerializeField] private Vector2Int _riverSize;
+    [SerializeField] private int _riverLength;
+    [SerializeField] private int _riverSearchRadius;
+    [SerializeField] private int _riverSize;
 
     [Range(0.0f,1.0f)]
     [SerializeField] private float _temperatureNoiseStrength;
@@ -22,7 +24,7 @@ public class WorldGenerator : MonoBehaviour
     [SerializeField] private int _edgeThickness;
 
     [SerializeField] public bool _autoUpdate;
-    [SerializeField] private enum DrawMode {FinishedMap, TemperatureMap, MoistureMap, HeightMap, VegetationMap};
+    [SerializeField] private enum DrawMode {FinishedMap, TemperatureMap, MoistureMap, HeightMap, VegetationMap, RiversMap};
     [SerializeField] private DrawMode _drawMode;
 
     private SpriteRenderer _spriteRenderer;
@@ -34,6 +36,7 @@ public class WorldGenerator : MonoBehaviour
     private float[,] _temperatureMap;
     private float[,] _moistureMap;
     private float[,] _vegetationMap;
+    private float[,] _riversMap;
 
     private void Start()
     {
@@ -45,7 +48,6 @@ public class WorldGenerator : MonoBehaviour
         CreateSprite();
         //GenerateLandMap();
         GenerateBiomeMaps();
-        //GenerateRivers();
         GenerateOutline();
     }
 
@@ -75,6 +77,11 @@ public class WorldGenerator : MonoBehaviour
             case DrawMode.VegetationMap:
                 GenerateVegetationMap();
                 CreateSprite(_vegetationMap);
+                break;
+            case DrawMode.RiversMap:
+                GenerateHeightMap();
+                GenerateRivers();
+                CreateSprite(_riversMap);
                 break;
         }
     }
@@ -207,11 +214,19 @@ public class WorldGenerator : MonoBehaviour
                 //_heightMap[x, y] = _heightMap[x, y] * voronoiNoiseMap[x,y];
             }
         }
+        GenerateRivers();
+        for (int y = 0; y < _worldSize.y; y++)
+        {
+            for (int x = 0; x < _worldSize.x; x++)
+            {
+                _heightMap[x, y] = _riversMap[x, y] == 1 ? (_biomeData[1].elevationRange.x + 0.01f) : _heightMap[x, y];
+            }
+        }
     }
 
     private void GenerateRivers()
     {
-        int maxErrCount = 10;
+        /*int maxErrCount = 10;
         for (int i = 0; i < _numRivers; i++)
         {
             int errCount = 0;
@@ -225,10 +240,12 @@ public class WorldGenerator : MonoBehaviour
                 errCount++;
             }
         }
-        _world.Apply();
+        _world.Apply();*/
+        GenerateMoistureMap();
+        _riversMap = RiverBuilder.GenerateRivers(_worldSize, _numRivers,_riverLength, _riverSize, _riverSearchRadius, _heightMap, _moistureMap);
     }
 
-    private bool TryGenerateRiver()
+    /*private bool TryGenerateRiver()
     {
         Vector2Int[] directions = { new Vector2Int(-1, 1), new Vector2Int(0, 1), new Vector2Int(1, 1), new Vector2Int(-1, 0), new Vector2Int(1, 0), new Vector2Int(-1, -1), new Vector2Int(0, -1), new Vector2Int(1, -1) };
 
@@ -269,7 +286,7 @@ public class WorldGenerator : MonoBehaviour
             Debug.Log("HighTechSafetyMeasures saved you");
 
         return true;
-    }
+    }*/
 
     private void GenerateOutline()
     {
