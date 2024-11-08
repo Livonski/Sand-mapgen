@@ -81,6 +81,11 @@ public class WorldGenerator : MonoBehaviour
         }
     }
 
+    public Texture2D GetWorldTexture()
+    {
+        return _sprite.texture;
+    }
+
     private void GenerateBiomeMaps()
     {
         // Debug stuff
@@ -160,6 +165,7 @@ public class WorldGenerator : MonoBehaviour
             float score = _biomeData[i].GetBiomeScore(temperature, moisture, elevation, vegetation);
 
             if(score < bestScore && _biomeData[i].IsInRange(temperature, moisture, elevation, vegetation))
+            //if(score < bestScore)
             {
                 bestScore = score;
                 bestColor = _biomeData[i].biomeColor;
@@ -310,6 +316,9 @@ public struct BiomeData
     public Vector2 elevationRange;
     public Vector2 vegetationRange;
 
+    [Range(0.01f,1.0f)]
+    public float rarity;
+
     public Color biomeColor;
 
     public bool IsInRange(float temperature, float moisture, float elevation, float vegetation)
@@ -322,10 +331,10 @@ public struct BiomeData
 
     public float GetBiomeScore(float pixelTemp, float pixelMoisture, float pixelElevation, float pixelVegetation)
     {
-        float tempScore = Mathf.Abs(pixelTemp - ((temperatureRange.x + temperatureRange.y) / 2));
-        float moistureScore = Mathf.Abs(pixelMoisture - ((moistureRange.x + moistureRange.y) / 2));
+        float tempScore = Mathf.Abs(pixelTemp - ((temperatureRange.x + temperatureRange.y) / 2)) * rarity;
+        float moistureScore = Mathf.Abs(pixelMoisture - ((moistureRange.x + moistureRange.y) / 2)) * rarity;
         float elevationScore = Mathf.Abs(pixelElevation - ((elevationRange.x + elevationRange.y) / 2));
-        float vegetationScore = Mathf.Abs(pixelVegetation - ((vegetationRange.x + vegetationRange.y) / 2));
-        return tempScore + moistureScore; 
+        float vegetationScore = Mathf.Abs(pixelVegetation - ((vegetationRange.x + vegetationRange.y) / 2)) * rarity;
+        return tempScore + moistureScore + vegetationScore; 
     }
 }
