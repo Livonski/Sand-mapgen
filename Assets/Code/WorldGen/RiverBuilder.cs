@@ -5,13 +5,13 @@ using UnityEngine;
 public static class RiverBuilder
 {
     private static Vector2Int _worldSize;
-    public static float[,] GenerateRivers(Vector2Int worldSize, int numRivers, int riverLength, int riverSize, int searchRadius, float[,] heightMap, float[,] moistureMap)
+    public static float[,] GenerateRivers(Vector2Int worldSize, RiverGenerationParameters riverParameters, float[,] heightMap, float[,] moistureMap)
     {
         _worldSize = worldSize;
         UnityEngine.Random.InitState(0);
 
         float[,] attractivnesMap = GenerateAttractivnesMap(heightMap, moistureMap);
-        River[] rivers = GenerateRiversStartPoints(numRivers, riverLength, riverSize, heightMap, attractivnesMap, searchRadius);
+        River[] rivers = GenerateRiversStartPoints(riverParameters, heightMap, attractivnesMap);
 
         float[,] riversMap = RunRivers(rivers, attractivnesMap);
 
@@ -33,16 +33,20 @@ public static class RiverBuilder
         return attractivnesMap;
     }
 
-    private static River[] GenerateRiversStartPoints(int numRivers, int riverLength, int riverSize, float[,] heightMap, float[,] attractivnesMap, int searchRadius)
+    private static River[] GenerateRiversStartPoints(RiverGenerationParameters riverParameters, float[,] heightMap, float[,] attractivnesMap)
     {
-        River[] rivers = new River[numRivers];
+        River[] rivers = new River[riverParameters.numRivers];
 
-        for (int i = 0; i < numRivers; i++)
+        for (int i = 0; i < riverParameters.numRivers; i++)
         {
             Vector2Int randomPoint = TryGeneratePoint(heightMap);
-            Vector2Int direction = CalculateDirection(randomPoint, searchRadius, attractivnesMap);
+            Vector2Int direction = CalculateDirection(randomPoint, riverParameters.searchRadius, attractivnesMap);
 
-            River newRiver = new River(i, randomPoint, direction, riverLength, riverSize);
+            float randomValue = Random.Range(0.0f, 1.0f);
+            int randomRiverLength = Mathf.RoundToInt(riverParameters.lengthDistribution.Evaluate(randomValue));
+            int randomRiverSize = Mathf.RoundToInt(riverParameters.sizeDistribution.Evaluate(randomValue));
+
+            River newRiver = new River(i, randomPoint, direction, randomRiverLength, randomRiverSize, riverParameters.radiusDecayChance);
             rivers[i] = newRiver;
         }
         return rivers;
@@ -59,7 +63,6 @@ public static class RiverBuilder
             int y = Random.Range(0, _worldSize.y);
             if (heightMap[x,y] >= 0.54f && heightMap[x, y] <= 0.56f)
             {
-                Debug.Log($"generated point at {x}:{y}");
                 return new Vector2Int(x, y);
             }
         }
@@ -77,8 +80,8 @@ public static class RiverBuilder
         {
             for (int x = position.x - searchRadius; x < position.x + searchRadius; x++)
             {
-                float randomBias = Random.Range(-0.1f, 0.1f);
-                if(x > 0 && x < _worldSize.x && y > 0 && y < _worldSize.y && bestAttractivnes < attractivnesMap[x,y] && position.x != x && position.y != y)
+                float randomBias = Random.Range(-0.01f, 0.0f);
+                if(x > 0 && x < _worldSize.x && y > 0 && y < _worldSize.y && bestAttractivnes < (attractivnesMap[x,y] + randomBias) && position.x != x && position.y != y)
                 {
                     bestPointPosition = new Vector2Int(x, y);
                     bestAttractivnes = attractivnesMap[x,y];
@@ -105,12 +108,16 @@ public static class RiverBuilder
         while (river.length > 0) 
         { 
             riverMap = DrawLine(riverMap,river, river.radius);
-            attractivnesMap = DrawLine(attractivnesMap, river, river.radius, 0);
+            attractivnesMap = DrawLine(attractivnesMap, river, (int)(river.radius / 2), 0);
+
+            float sizeDecay = Random.Range(0.0f,1.0f);
+            if (sizeDecay <= river.radiusDecayChance && river.radius > 3)
+                river.radius -= 1;
+
             int distance = Mathf.RoundToInt(Vector2Int.Distance(river.position, river.position + river.direction));
             river.length -= distance;
             river.position += river.direction;
             river.direction = CalculateDirection(river.position, 5, attractivnesMap);
-            Debug.Log($"New position: {river.position}, new direction: {river.direction}, remaining length: {river.length}");
         }
 
         return riverMap;
@@ -132,8 +139,6 @@ public static class RiverBuilder
 
         int dir = dy < 0 ? -1 : 1;
         dy *= dir;
-
-        Debug.Log($"ID: {river.ID}, endPos: {endPosition}, startPos: {river.position}, direction: {river.direction}");
 
 
         //TODO: do something if dx == 0
@@ -166,7 +171,9 @@ public static class RiverBuilder
             for (int x = position.x - radius; x < position.x + radius; x++)
             {
                 if (x > 0 && x < _worldSize.x && y > 0 && y < _worldSize.y)
+                {
                     riverMap[x, y] = strength;
+                }
             }
         }
         return riverMap;
@@ -180,13 +187,25 @@ struct River
     public Vector2Int direction;
     public int length;
     public int radius;
+    public float radiusDecayChance;
 
-    public River(int ID, Vector2Int position, Vector2Int direction, int length, int radius)
+    public River(int ID, Vector2Int position, Vector2Int direction, int length, int radius, float radiusDecayChance)
     {
         this.ID = ID;
         this.position = position;
         this.direction = direction;
         this.length = length;
         this.radius = radius;
+        this.radiusDecayChance = radiusDecayChance;
     }
+}
+
+[System.Serializable]
+public struct RiverGenerationParameters
+{
+    public int numRivers;
+    public AnimationCurve lengthDistribution;
+    public AnimationCurve sizeDistribution;
+    public float radiusDecayChance;
+    public int searchRadius;
 }

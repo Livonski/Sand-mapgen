@@ -3,12 +3,8 @@ using UnityEngine;
 public class WorldGenerator : MonoBehaviour
 {
     [SerializeField] private Vector2Int _worldSize;
-    [SerializeField] private float _islandSize;
 
-    [SerializeField] private int _numRivers;
-    [SerializeField] private int _riverLength;
-    [SerializeField] private int _riverSearchRadius;
-    [SerializeField] private int _riverSize;
+    [SerializeField] private RiverGenerationParameters _riverGenerationParameters;
 
     [Range(0.0f,1.0f)]
     [SerializeField] private float _temperatureNoiseStrength;
@@ -46,7 +42,6 @@ public class WorldGenerator : MonoBehaviour
     public void GenerateWorld()
     {
         CreateSprite();
-        //GenerateLandMap();
         GenerateBiomeMaps();
         GenerateOutline();
     }
@@ -210,8 +205,6 @@ public class WorldGenerator : MonoBehaviour
             for (int x = 0; x < _worldSize.x; x++)
             {
                 _heightMap[x, y] = (_heightMap[x, y] * _heightNoiseStrength) + (voronoiNoiseMap[x,y] * (1 - _heightNoiseStrength));
-                //_heightMap[x, y] = Mathf.Clamp01(_heightMap[x, y] + 1 - _heightNoiseStrength) * Mathf.Clamp01(voronoiNoiseMap[x,y] + _heightNoiseStrength);
-                //_heightMap[x, y] = _heightMap[x, y] * voronoiNoiseMap[x,y];
             }
         }
         GenerateRivers();
@@ -226,67 +219,9 @@ public class WorldGenerator : MonoBehaviour
 
     private void GenerateRivers()
     {
-        /*int maxErrCount = 10;
-        for (int i = 0; i < _numRivers; i++)
-        {
-            int errCount = 0;
-            while (errCount < maxErrCount)
-            {
-                Debug.Log($"river{i}, {errCount} try");
-                bool succes = TryGenerateRiver();
-                if (succes)
-                    errCount = maxErrCount;
-
-                errCount++;
-            }
-        }
-        _world.Apply();*/
         GenerateMoistureMap();
-        _riversMap = RiverBuilder.GenerateRivers(_worldSize, _numRivers,_riverLength, _riverSize, _riverSearchRadius, _heightMap, _moistureMap);
+        _riversMap = RiverBuilder.GenerateRivers(_worldSize, _riverGenerationParameters, _heightMap, _moistureMap);
     }
-
-    /*private bool TryGenerateRiver()
-    {
-        Vector2Int[] directions = { new Vector2Int(-1, 1), new Vector2Int(0, 1), new Vector2Int(1, 1), new Vector2Int(-1, 0), new Vector2Int(1, 0), new Vector2Int(-1, -1), new Vector2Int(0, -1), new Vector2Int(1, -1) };
-
-        int x = Random.Range(0, _worldSize.x);
-        int y = Random.Range(0, _worldSize.y);
-
-        Vector2Int randDyr = directions[Random.Range(0,7)];
-
-        int dyrX = randDyr.x;
-        int dyrY = randDyr.y;
-
-        int riverSize = Random.Range(_riverSize.x, _riverSize.y);
-
-        Debug.Log($"pos: {x}, {y}, dyr: {dyrX},{dyrY}, size: {riverSize}");
-
-        if(_world.GetPixel(x,y) != _biomeData[0].biomeColor && _world.GetPixel(x, y) != _biomeData[1].biomeColor)
-            return false;
-
-        int HighTechSafetyMeasures = 1024;
-        while (riverSize > 0 && HighTechSafetyMeasures > 0)
-        {
-            x += dyrX;
-            y += dyrY;
-            HighTechSafetyMeasures--;
-            if (x >= _worldSize.x || y >= _worldSize.y)
-            {
-                riverSize = 0;
-                return false;
-            }
-
-            if (_world.GetPixel(x, y) != _biomeData[0].biomeColor && _world.GetPixel(x, y) != _biomeData[1].biomeColor)
-            {
-                _world.SetPixel(x, y, Color.white);
-                riverSize--;
-            }
-        }
-        if (HighTechSafetyMeasures <= 0)
-            Debug.Log("HighTechSafetyMeasures saved you");
-
-        return true;
-    }*/
 
     private void GenerateOutline()
     {
