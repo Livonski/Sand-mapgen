@@ -20,7 +20,7 @@ public class WorldGenerator : MonoBehaviour
     [SerializeField] private int _edgeThickness;
 
     [SerializeField] public bool _autoUpdate;
-    [SerializeField] private enum DrawMode {FinishedMap, TemperatureMap, MoistureMap, HeightMap, VegetationMap, RiversMap};
+    [SerializeField] private enum DrawMode {FinishedMap, TemperatureMap, MoistureMap, HeightMap, VegetationMap, RiversMap, ResourcesMap};
     [SerializeField] private DrawMode _drawMode;
 
     private SpriteRenderer _spriteRenderer;
@@ -34,6 +34,8 @@ public class WorldGenerator : MonoBehaviour
     private float[,] _vegetationMap;
     private float[,] _riversMap;
 
+    private Texture2D _resourcesMap;
+
     private void Start()
     {
         GenerateWorld();
@@ -44,6 +46,8 @@ public class WorldGenerator : MonoBehaviour
         CreateSprite();
         GenerateBiomeMaps();
         GenerateOutline();
+        if(_drawMode != DrawMode.ResourcesMap)
+            GenerateResources();
     }
 
     public void DrawMapInInspector()
@@ -78,12 +82,28 @@ public class WorldGenerator : MonoBehaviour
                 GenerateRivers();
                 CreateSprite(_riversMap);
                 break;
+            case DrawMode.ResourcesMap:
+                GenerateWorld();
+                GenerateResources();
+                CreateSprite(_resourcesMap);
+                break;
         }
     }
 
     public Texture2D GetWorldTexture()
     {
         return _sprite.texture;
+    }
+
+    public BiomeData GetBiomeData(string name)
+    {
+        foreach(BiomeData biome in _biomeData)
+        {
+            if (biome.name == name)
+                return biome;
+        }
+        Debug.LogWarning($"Biome {name} not found");
+        return _biomeData[0];
     }
 
     private void GenerateBiomeMaps()
@@ -267,6 +287,22 @@ public class WorldGenerator : MonoBehaviour
         return false;
     }
 
+    private void GenerateResources()
+    {
+        ResourceGenerator resourceGenerator = GetComponent<ResourceGenerator>();
+        _resourcesMap = resourceGenerator.GenerateResourcesMap(_worldSize, _world);
+
+        for (int y = 0; y < _worldSize.y; y++)
+        {
+            for (int x = 0; x < _worldSize.y; x++)
+            {
+                if (_resourcesMap.GetPixel(x, y) != Color.clear)
+                    _world.SetPixel(x, y, _resourcesMap.GetPixel(x, y));
+            }
+        }
+        _world.Apply();
+    }
+
     private void CreateSprite()
     {
         if (_spriteRenderer == null)
@@ -287,6 +323,16 @@ public class WorldGenerator : MonoBehaviour
         Vector2 pivot = new Vector2(0.5f, 0.5f);
 
         _sprite = Sprite.Create(_world, spriteRect, pivot, _spriteRenderer.sprite.pixelsPerUnit);
+        _spriteRenderer.sprite = _sprite;
+    }
+    private void CreateSprite(Texture2D map)
+    {
+        if (_spriteRenderer == null)
+            _spriteRenderer = GetComponent<SpriteRenderer>();
+        Rect spriteRect = new Rect(Vector2.zero, _worldSize);
+        Vector2 pivot = new Vector2(0.5f, 0.5f);
+
+        _sprite = Sprite.Create(map, spriteRect, pivot, _spriteRenderer.sprite.pixelsPerUnit);
         _spriteRenderer.sprite = _sprite;
     }
 
