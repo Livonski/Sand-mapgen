@@ -46,8 +46,8 @@ public class WorldGenerator : MonoBehaviour
         CreateSprite();
         GenerateBiomeMaps();
         GenerateOutline();
-        if(_drawMode != DrawMode.ResourcesMap)
-            GenerateResources();
+        //if(_drawMode != DrawMode.ResourcesMap)
+        //    GenerateResources();
     }
 
     public void DrawMapInInspector()

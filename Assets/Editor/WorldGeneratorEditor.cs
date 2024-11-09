@@ -24,7 +24,7 @@ public class WorldGeneratorEditor : Editor
     }
     private void SaveTextureAsAsset(Texture2D texture)
     {
-        string path = EditorUtility.SaveFilePanelInProject("Save Texture", "Maps", "png", "Please enter a file name to save the texture to");
+        string path = EditorUtility.SaveFilePanelInProject("Save Texture", "Map_01", "png", "Please enter a file name to save the texture to");
         if (path.Length != 0)
         {
             // Convert the texture to PNG
@@ -32,8 +32,8 @@ public class WorldGeneratorEditor : Editor
             if (pngData != null)
             {
                 System.IO.File.WriteAllBytes(path, pngData);
-                AssetDatabase.ImportAsset(path); // Refresh the AssetDatabase containing the new asset
-                AssetDatabase.Refresh();
+                //AssetDatabase.ImportAsset(path); // Refresh the AssetDatabase containing the new asset
+                //AssetDatabase.Refresh();
                 Debug.Log("Texture saved as new asset at " + path);
             }
         }
