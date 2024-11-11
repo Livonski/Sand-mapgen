@@ -1,9 +1,4 @@
-using System.Collections;
-using System.Collections.Generic;
-using System.Linq;
-using System.Resources;
 using UnityEngine;
-using UnityEngine.UIElements;
 
 public class ResourceGenerator : MonoBehaviour
 {
@@ -56,10 +51,11 @@ public class ResourceGenerator : MonoBehaviour
         {
             for (int i = 0; i < resource.numPatches; i++)
             {
-                int sizeX = Random.Range(50, 150);
-                int sizeY = Random.Range(50, 150);
+                int sizeX = Mathf.FloorToInt(resource.sizeDistribution.Evaluate(Random.Range(0.0f, 1.0f)));
+                int sizeY = Mathf.FloorToInt(resource.sizeDistribution.Evaluate(Random.Range(0.0f, 1.0f)));
                 Vector2Int patchSize = new Vector2Int(sizeX, sizeY);
 
+                //TODO: better point generation
                 int posX = Random.Range(0, _worldSize.x);
                 int posY = Random.Range(0, _worldSize.y);
                 Vector2Int patchPosition = new Vector2Int(posX, posY);
@@ -74,7 +70,7 @@ public class ResourceGenerator : MonoBehaviour
                 noiseParameters.seed = i;
 
                 Color[] worldSlice = _world.GetPixels(topLeftCorner.x, topLeftCorner.y, patchSize.x, patchSize.y);
-                ResourcePatch resourcePatch = new ResourcePatch(resource,noiseParameters, patchSize, patchPosition, worldSlice);
+                ResourcePatch resourcePatch = new ResourcePatch(resource,noiseParameters, patchSize, patchPosition, worldSlice, resource.sineWaveParams);
                 Debug.Log($"Generating {resource.name}, {i} patch at {patchPosition}, with size {patchSize}, topLeftCorner {topLeftCorner}");
                 Color[] patchMap = resourcePatch.GenerateResourcePatch().GetPixels();
 
@@ -94,6 +90,7 @@ public struct Resource
     public Color color;
 
     public int density;
+    public AnimationCurve sizeDistribution;
 
     public int numPatches;
 
@@ -101,6 +98,7 @@ public struct Resource
     public Color[] preferedBiomesColors;
 
     public ResourceGenerationPattern generationPattern;
+    public SineWaveParams sineWaveParams;
 
     public bool isPreferedBiome(Color biomeColor)
     {
@@ -122,17 +120,20 @@ public class ResourcePatch
     private NoiseParameters _noiseParameters;
     private float[,] _patchNoise;
 
+    private SineWaveParams _sineWaveParams;
+
     private Vector2Int _size;
     private Vector2Int _position;
     private Vector2Int _localCenterPoint;
     
-    public ResourcePatch(Resource resource, NoiseParameters noiseParameters, Vector2Int patchSize, Vector2Int patchPosition, Color[] worldSlice)
+    public ResourcePatch(Resource resource, NoiseParameters noiseParameters, Vector2Int patchSize, Vector2Int patchPosition, Color[] worldSlice, SineWaveParams sineWaveParams)
     {
         _resource = resource;
         _noiseParameters = noiseParameters;
         _size = patchSize;
         _position = patchPosition;
         _worldSlice = worldSlice;
+        _sineWaveParams = sineWaveParams;
         _localCenterPoint = new Vector2Int(patchSize.x / 2, patchSize.y / 2);
     }
 
@@ -146,6 +147,7 @@ public class ResourcePatch
 
     private Texture2D GeneratePatchArea()
     {
+        //TODO: probably need to revrite this into interface/delegate system because it's horrible
         _patchNoise = Noise.GenerateNoiseMap(_size.x, _size.y, _noiseParameters);
         Texture2D output = new Texture2D(_size.x, _size.y, TextureFormat.ARGB32, false);
         for (int y = 0; y < _size.y; y++)
@@ -167,8 +169,13 @@ public class ResourcePatch
                         break;
 
                     case ResourceGenerationPattern.stripes:
-                        //TODO
-                        pixelColor = (_resource.isPreferedBiome(_worldSlice[y * _size.x + x]) && pixelValue > 0.5f) ? _resource.color : Color.clear;
+                        randomValue = Random.Range(0, 100);
+                        float xWobble = Mathf.Sin(y * _sineWaveParams.wobbleFrequency.x) * _sineWaveParams.wobbleFrequency.x;
+                        float yWobble = Mathf.Sin(x * _sineWaveParams.wobbleFrequency.y) * _sineWaveParams.wobbleFrequency.y;
+
+                        float waveColor = Mathf.Sin((x + xWobble) * _sineWaveParams.frequency + (y + yWobble) * _sineWaveParams.frequency) * _sineWaveParams.amplitude;
+                        waveColor = Mathf.InverseLerp(-_sineWaveParams.amplitude,_sineWaveParams.amplitude, waveColor);
+                        pixelColor = _resource.isPreferedBiome(_worldSlice[y * _size.x + x]) && pixelValue > 0.5f && waveColor > 0.7f && randomValue >= (100 - _resource.density) ? _resource.color : Color.clear;
                         break;
                 }
                 output.SetPixel(x, y, pixelColor);
@@ -178,6 +185,14 @@ public class ResourcePatch
     }
 }
 
+[System.Serializable]
+public struct SineWaveParams
+{
+    public float frequency;
+    public Vector2 wobbleStrength;
+    public Vector2 wobbleFrequency;
+    public float amplitude;
+}
 
 public enum ResourceGenerationPattern
 {
