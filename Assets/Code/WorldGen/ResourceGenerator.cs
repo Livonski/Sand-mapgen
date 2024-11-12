@@ -1,6 +1,7 @@
 using Unity.VisualScripting;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.UIElements;
 
 public class ResourceGenerator : MonoBehaviour
 {
@@ -80,25 +81,55 @@ public class ResourceGenerator : MonoBehaviour
     private Vector2Int[] GeneratePoints(Resource resource)
     {
         Vector2Int[] points = new Vector2Int[resource.numPatches];
-        List<Vector2Int> possiblePoints = GeneratePossiblePoints(resource);
+
+        List<float> possiblePointsWeights;
+        List<Vector2Int> possiblePoints = GeneratePossiblePoints(resource, out possiblePointsWeights);
+
         for (int i = 0; i < resource.numPatches; i++)
         {
-            int rand = Random.Range(0, possiblePoints.Count);
-            points[i] = possiblePoints[rand];
-            possiblePoints.RemoveAt(rand);
+            //int rand = Random.Range(0, possiblePoints.Count);
+            //points[i] = possiblePoints[rand];
+            //possiblePoints.RemoveAt(rand);
+            points[i] = GetRandomWeightedPoint(possiblePoints,possiblePointsWeights);
         }
         return points;
     }
 
-    private List<Vector2Int> GeneratePossiblePoints(Resource resource)
+    private Vector2Int GetRandomWeightedPoint(List<Vector2Int> possiblePoints, List<float> weights)
+    {
+        float totalWeight = 0.0f;
+        foreach (float weight in weights)
+        {
+            totalWeight += weight;
+        }
+
+        float rand = Random.Range(0, totalWeight);
+        float cumulativeWeight = 0.0f;
+
+        for (int i = 0; i < possiblePoints.Count; i++)
+        {
+            cumulativeWeight += weights[i];
+            if (rand <= cumulativeWeight)
+                return possiblePoints[i];
+        }
+
+        return possiblePoints[possiblePoints.Count - 1];
+    }
+
+    private List<Vector2Int> GeneratePossiblePoints(Resource resource, out List<float> weights)
     {
         List<Vector2Int> possiblePoints = new List<Vector2Int>();
+        weights = new List<float>();
         for (int y = 0; y < _worldSize.y; y++)
         {
             for (int x = 0; x < _worldSize.x; x++)
             {
                 if(resource.isPreferedBiome(_world.GetPixel(x, y)))
-                    possiblePoints.Add(new Vector2Int(x,y));
+                {
+                    possiblePoints.Add(new Vector2Int(x, y));
+                    float weight = 1.0f - _densityMap.GetPixel(x,y).r;
+                    weights.Add(weight);
+                }
             }
         }
         return possiblePoints;
