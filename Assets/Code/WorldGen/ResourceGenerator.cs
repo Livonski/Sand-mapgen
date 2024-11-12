@@ -5,7 +5,6 @@ using UnityEngine.UIElements;
 
 public class ResourceGenerator : MonoBehaviour
 {
-    [SerializeField] private int tmpSelector;
     [SerializeField] private Resource[] _resources;
     [SerializeField] private NoiseParameters _patchesNoise;
 
@@ -69,7 +68,7 @@ public class ResourceGenerator : MonoBehaviour
 
                 Color[] worldSlice = _world.GetPixels(topLeftCorner.x, topLeftCorner.y, patchSize.x, patchSize.y);
                 ResourcePatch resourcePatch = new ResourcePatch(resource,noiseParameters, patchSize, patchPosition, worldSlice, resource.sineWaveParams);
-                Debug.Log($"Generating {resource.name}, {i} patch at {patchPosition}, with size {patchSize}, topLeftCorner {topLeftCorner}");
+                //Debug.Log($"Generating {resource.name}, {i} patch at {patchPosition}, with size {patchSize}, topLeftCorner {topLeftCorner}");
                 Color[] patchMap = resourcePatch.GenerateResourcePatch().GetPixels();
 
                 _resourcesMap.SetPixels(topLeftCorner.x, topLeftCorner.y, patchSize.x, patchSize.y, patchMap);
@@ -87,9 +86,6 @@ public class ResourceGenerator : MonoBehaviour
 
         for (int i = 0; i < resource.numPatches; i++)
         {
-            //int rand = Random.Range(0, possiblePoints.Count);
-            //points[i] = possiblePoints[rand];
-            //possiblePoints.RemoveAt(rand);
             points[i] = GetRandomWeightedPoint(possiblePoints,possiblePointsWeights);
         }
         return points;

@@ -136,7 +136,7 @@ public class WorldGenerator : MonoBehaviour
 
         for (int y = 0; y < _worldSize.y; y++)
         {
-            for (int x = 0; x < _worldSize.y; x++)
+            for (int x = 0; x < _worldSize.x; x++)
             {
 
                 Color biomeColor = EvaluateBiomes(x, y);
@@ -258,7 +258,7 @@ public class WorldGenerator : MonoBehaviour
     {
         for (int y = 0; y < _worldSize.y; y++)
         {
-            for (int x = 0; x < _worldSize.y; x++)
+            for (int x = 0; x < _worldSize.x; x++)
             {
                 if (IsOnEdge(x, y, _edgeThickness))
                     _world.SetPixel(x, y, Color.black);
@@ -308,7 +308,7 @@ public class WorldGenerator : MonoBehaviour
 
         for (int y = 0; y < _worldSize.y; y++)
         {
-            for (int x = 0; x < _worldSize.y; x++)
+            for (int x = 0; x < _worldSize.x; x++)
             {
                 if (_resourcesMap.GetPixel(x, y) != Color.clear)
                     _world.SetPixel(x, y, _resourcesMap.GetPixel(x, y));
@@ -355,7 +355,7 @@ public class WorldGenerator : MonoBehaviour
         Texture2D output = new Texture2D(_worldSize.x, _worldSize.y, TextureFormat.ARGB32, false);
         for (int y = 0; y < _worldSize.y; y++)
         {
-            for (int x = 0; x < _worldSize.y; x++)
+            for (int x = 0; x < _worldSize.x; x++)
             {
                 Color mapColor = new Color(map[x,y], map[x, y], map[x, y]);
                 output.SetPixel(x, y, mapColor);
