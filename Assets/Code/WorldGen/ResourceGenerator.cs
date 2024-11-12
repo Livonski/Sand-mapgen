@@ -1,9 +1,15 @@
+using Unity.VisualScripting;
+using System.Collections.Generic;
 using UnityEngine;
 
 public class ResourceGenerator : MonoBehaviour
 {
+    [SerializeField] private int tmpSelector;
     [SerializeField] private Resource[] _resources;
     [SerializeField] private NoiseParameters _patchesNoise;
+
+    Texture2D _resourcesMap;
+    private Texture2D _densityMap;
 
     private Vector2Int _worldSize = Vector2Int.zero;
     private Texture2D _world;
@@ -16,11 +22,19 @@ public class ResourceGenerator : MonoBehaviour
         _worldGenerator = GetComponent<WorldGenerator>();
 
         CalculatePreferedColors();
-        Texture2D resourcesMap = GenerateResources();
-        resourcesMap.Apply();
+        InitializeMaps();
+        GenerateResources();
 
-        return resourcesMap;
+        return _resourcesMap;
     }
+
+    public Texture2D GenerateDensityMap(Vector2Int worldSize, Texture2D world)
+    {
+        GenerateResourcesMap(worldSize, world);
+
+        return _densityMap;
+    }
+
 
     private void CalculatePreferedColors()
     {
@@ -35,34 +49,17 @@ public class ResourceGenerator : MonoBehaviour
         }
     }
 
-    private Texture2D GenerateResources()
+    private void GenerateResources()
     {
-        Texture2D resourcesMap = new Texture2D(_worldSize.x,_worldSize.y, TextureFormat.ARGB32, false);
-
-        for (int y = 0; y < _worldSize.y; y++)
-        {
-            for(int x = 0; x < _worldSize.x; x++)
-            {
-                resourcesMap.SetPixel(x, y, Color.clear);
-            }
-        }
-
         foreach (var resource in _resources)
         {
+            Vector2Int[] points = GeneratePoints(resource);
             for (int i = 0; i < resource.numPatches; i++)
             {
-                int sizeX = Mathf.FloorToInt(resource.sizeDistribution.Evaluate(Random.Range(0.0f, 1.0f)));
-                int sizeY = Mathf.FloorToInt(resource.sizeDistribution.Evaluate(Random.Range(0.0f, 1.0f)));
-                Vector2Int patchSize = new Vector2Int(sizeX, sizeY);
+                Vector2Int patchPosition = points[i];
+                Vector2Int patchSize = CalculateSize(resource, patchPosition);
 
-                //TODO: better point generation
-                int posX = Random.Range(0, _worldSize.x);
-                int posY = Random.Range(0, _worldSize.y);
-                Vector2Int patchPosition = new Vector2Int(posX, posY);
-                if ((patchPosition.x + patchSize.x) > _worldSize.x)
-                    patchSize.x = _worldSize.x - patchPosition.x;
-                if ((patchPosition.y + patchSize.y) > _worldSize.y)
-                    patchSize.y = _worldSize.y - patchPosition.y;
+                PutPoint(patchPosition,Mathf.Max(patchSize.x,patchSize.y));
 
                 Vector2Int topLeftCorner = new Vector2Int(Mathf.Max(0, patchPosition.x - patchSize.x / 2), Mathf.Max(0, patchPosition.y - patchSize.y / 2));
 
@@ -74,12 +71,88 @@ public class ResourceGenerator : MonoBehaviour
                 Debug.Log($"Generating {resource.name}, {i} patch at {patchPosition}, with size {patchSize}, topLeftCorner {topLeftCorner}");
                 Color[] patchMap = resourcePatch.GenerateResourcePatch().GetPixels();
 
-                resourcesMap.SetPixels(topLeftCorner.x, topLeftCorner.y, patchSize.x, patchSize.y, patchMap);
-                resourcesMap.Apply();
+                _resourcesMap.SetPixels(topLeftCorner.x, topLeftCorner.y, patchSize.x, patchSize.y, patchMap);
+                _resourcesMap.Apply();
+            }
+        }
+    }
+
+    private Vector2Int[] GeneratePoints(Resource resource)
+    {
+        Vector2Int[] points = new Vector2Int[resource.numPatches];
+        List<Vector2Int> possiblePoints = GeneratePossiblePoints(resource);
+        for (int i = 0; i < resource.numPatches; i++)
+        {
+            int rand = Random.Range(0, possiblePoints.Count);
+            points[i] = possiblePoints[rand];
+            possiblePoints.RemoveAt(rand);
+        }
+        return points;
+    }
+
+    private List<Vector2Int> GeneratePossiblePoints(Resource resource)
+    {
+        List<Vector2Int> possiblePoints = new List<Vector2Int>();
+        for (int y = 0; y < _worldSize.y; y++)
+        {
+            for (int x = 0; x < _worldSize.x; x++)
+            {
+                if(resource.isPreferedBiome(_world.GetPixel(x, y)))
+                    possiblePoints.Add(new Vector2Int(x,y));
+            }
+        }
+        return possiblePoints;
+    }
+
+    private Vector2Int CalculateSize(Resource resource, Vector2Int position)
+    {
+        int sizeX = Mathf.FloorToInt(resource.sizeDistribution.Evaluate(Random.Range(0.0f, 1.0f)));
+        int sizeY = Mathf.FloorToInt(resource.sizeDistribution.Evaluate(Random.Range(0.0f, 1.0f)));
+
+        Vector2Int size = new Vector2Int(sizeX, sizeY);
+
+        if ((position.x + size.x) > _worldSize.x)
+            size.x = _worldSize.x - position.x;
+        if ((position.y + size.y) > _worldSize.y)
+            size.y = _worldSize.y - position.y;
+
+        return size;
+    }
+
+    private void InitializeMaps()
+    {
+        _resourcesMap = new Texture2D(_worldSize.x, _worldSize.y, TextureFormat.ARGB32, false);
+        _densityMap = new Texture2D(_worldSize.x, _worldSize.y, TextureFormat.ARGB32, false);
+
+        for (int y = 0; y < _worldSize.y; y++)
+        {
+            for (int x = 0; x < _worldSize.x; x++)
+            {
+                _resourcesMap.SetPixel(x, y, Color.clear);
+                _densityMap.SetPixel(x, y, Color.black);
             }
         }
 
-        return resourcesMap;
+        _densityMap.Apply();
+        _resourcesMap.Apply();
+    }
+
+    private void PutPoint(Vector2Int position, int radius)
+    {
+        for (int y = position.y - radius; y < position.y + radius; y++)
+        {
+            for (int x = position.x - radius; x < position.x + radius; x++)
+            {
+                if (x > 0 && x < _worldSize.x && y > 0 && y < _worldSize.y)
+                {
+                    float strength = 1 - Vector2Int.Distance(position,new Vector2Int(x,y)) / radius;
+                    strength = Mathf.Clamp01(strength + _densityMap.GetPixel(x, y).r);
+                    Color pixelColor = new Color(strength,strength,strength);
+                    _densityMap.SetPixel(x, y, pixelColor);
+                }
+            }
+        }
+        _densityMap.Apply();
     }
 }
 

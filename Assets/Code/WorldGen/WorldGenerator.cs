@@ -20,7 +20,7 @@ public class WorldGenerator : MonoBehaviour
     [SerializeField] private int _edgeThickness;
 
     [SerializeField] public bool _autoUpdate;
-    [SerializeField] private enum DrawMode {FinishedMap, TemperatureMap, MoistureMap, HeightMap, VegetationMap, RiversMap, ResourcesMap};
+    [SerializeField] private enum DrawMode {FinishedMap, TemperatureMap, MoistureMap, HeightMap, VegetationMap, RiversMap, ResourcesMap, ResourcesDencityMap };
     [SerializeField] private DrawMode _drawMode;
 
     private SpriteRenderer _spriteRenderer;
@@ -46,7 +46,7 @@ public class WorldGenerator : MonoBehaviour
         CreateSprite();
         GenerateBiomeMaps();
         GenerateOutline();
-        if(_drawMode != DrawMode.ResourcesMap)
+        if(_drawMode != DrawMode.ResourcesMap && _drawMode != DrawMode.ResourcesDencityMap)
             GenerateResources();
     }
 
@@ -83,6 +83,11 @@ public class WorldGenerator : MonoBehaviour
                 CreateSprite(_riversMap);
                 break;
             case DrawMode.ResourcesMap:
+                GenerateWorld();
+                GenerateResources();
+                CreateSprite(_resourcesMap);
+                break;
+            case DrawMode.ResourcesDencityMap:
                 GenerateWorld();
                 GenerateResources();
                 CreateSprite(_resourcesMap);
@@ -290,7 +295,16 @@ public class WorldGenerator : MonoBehaviour
     private void GenerateResources()
     {
         ResourceGenerator resourceGenerator = GetComponent<ResourceGenerator>();
-        _resourcesMap = resourceGenerator.GenerateResourcesMap(_worldSize, _world);
+
+        //This is ugly 
+        if (_drawMode == DrawMode.ResourcesDencityMap)
+        {
+            _resourcesMap = resourceGenerator.GenerateDensityMap(_worldSize, _world);
+        }
+        else
+        {
+            _resourcesMap = resourceGenerator.GenerateResourcesMap(_worldSize, _world);
+        }
 
         for (int y = 0; y < _worldSize.y; y++)
         {
