@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Drawing;
 using Unity.Burst;
 using UnityEngine;
@@ -5,7 +6,7 @@ using UnityEngine;
 public static class RiverBuilder
 {
     private static Vector2Int _worldSize;
-    public static float[,] GenerateRivers(Vector2Int worldSize, RiverGenerationParameters riverParameters, float[,] heightMap, float[,] moistureMap)
+    public static List<Vector2Int> GenerateRivers(Vector2Int worldSize, RiverGenerationParameters riverParameters, float[,] heightMap, float[,] moistureMap)
     {
         _worldSize = worldSize;
         UnityEngine.Random.InitState(0);
@@ -13,7 +14,7 @@ public static class RiverBuilder
         float[,] attractivnesMap = GenerateAttractivnesMap(heightMap, moistureMap);
         River[] rivers = GenerateRiversStartPoints(riverParameters, heightMap, attractivnesMap);
 
-        float[,] riversMap = RunRivers(rivers, attractivnesMap);
+        List<Vector2Int> riversMap = RunRivers(rivers, attractivnesMap);
 
         return riversMap;
         //return attractivnesMap;
@@ -36,10 +37,11 @@ public static class RiverBuilder
     private static River[] GenerateRiversStartPoints(RiverGenerationParameters riverParameters, float[,] heightMap, float[,] attractivnesMap)
     {
         River[] rivers = new River[riverParameters.numRivers];
+        List<Vector2Int> possiblePoints = CalculatePossiblePoints(heightMap);
 
         for (int i = 0; i < riverParameters.numRivers; i++)
         {
-            Vector2Int randomPoint = TryGeneratePoint(heightMap);
+            Vector2Int randomPoint = TryGeneratePoint(possiblePoints);
             Vector2Int direction = CalculateDirection(randomPoint, riverParameters.searchRadius, attractivnesMap);
 
             float randomValue = Random.Range(0.0f, 1.0f);
@@ -52,23 +54,25 @@ public static class RiverBuilder
         return rivers;
     }
 
-    private static Vector2Int TryGeneratePoint(float[,] heightMap)
+    private static Vector2Int TryGeneratePoint(List<Vector2Int> possiblePoints)
     {
-        Vector2Int randomPoint = Vector2Int.zero;
-        int maxFailures = 1000;
+        int rand = Random.Range(0, possiblePoints.Count);
+        Vector2Int randomPoint = possiblePoints[rand];
+        return randomPoint;
+    }
 
-        for (int i = 0; i <= maxFailures; i++)
+    private static List<Vector2Int> CalculatePossiblePoints(float[,] heightMap)
+    {
+        List<Vector2Int> possiblePoints = new List<Vector2Int>();
+        for (int y = 0; y < _worldSize.y; y++)
         {
-            int x = Random.Range(0, _worldSize.x);
-            int y = Random.Range(0, _worldSize.y);
-            if (heightMap[x,y] >= 0.54f && heightMap[x, y] <= 0.56f)
+            for(int x = 0; x < _worldSize.x; x++)
             {
-                return new Vector2Int(x, y);
+                if(heightMap[x, y] >= 0.54f && heightMap[x, y] <= 0.56f)
+                    possiblePoints.Add(new Vector2Int(x, y));
             }
         }
-
-        Debug.Log("failure count exceeded 1000");
-        return randomPoint;
+        return possiblePoints;
     }
 
     private static Vector2Int CalculateDirection(Vector2Int position, int searchRadius, float[,] attractivnesMap)
@@ -93,17 +97,18 @@ public static class RiverBuilder
         return direction;
     }
 
-    private static float[,] RunRivers(River[] rivers, float[,] attractivnesMap)
+    private static List<Vector2Int> RunRivers(River[] rivers, float[,] attractivnesMap)
     {
-        float[,] riverMap = new float[_worldSize.x, _worldSize.y];
+        List<Vector2Int> riverMap = new List<Vector2Int>();
         foreach (River river in rivers)
         {
+            //TODO: convert riverMap from float[,] to Vector2Int list
             riverMap = RunRiver(river, riverMap, attractivnesMap);
         }
         return riverMap;
     }
 
-    private static float[,] RunRiver(River river, float[,] riverMap, float[,] attractivnesMap)
+    private static List<Vector2Int> RunRiver(River river, List<Vector2Int> riverMap, float[,] attractivnesMap)
     {
         while (river.length > 0) 
         { 
@@ -164,6 +169,47 @@ public static class RiverBuilder
         return riverMap;
     }
 
+    private static List<Vector2Int> DrawLine(List<Vector2Int> riverMap, River river, int radius = 5, float strength = 1.0f)
+    {
+        Vector2Int endPosition = river.position + river.direction;
+        Vector2Int startPosition = river.position;
+
+        if (startPosition.x > endPosition.x)
+        {
+            endPosition = river.position;
+            startPosition = river.position + river.direction;
+        }
+
+        int dx = endPosition.x - startPosition.x;
+        int dy = endPosition.y - startPosition.y;
+
+        int dir = dy < 0 ? -1 : 1;
+        dy *= dir;
+
+
+        //TODO: do something if dx == 0
+        if (dx != 0)
+        {
+            int y = startPosition.y;
+            float p = 2 * ((float)dy / (float)dx);
+            for (int i = 0; i < dx + 1; i++)
+            {
+                Vector2Int pointPosition = new Vector2Int(startPosition.x + i, y);
+                riverMap = PutPoint(riverMap, pointPosition, radius, strength);
+                if (p >= 0)
+                {
+                    y += dir;
+                    p = p + 2 * dy - 2 * dx;
+                }
+                else
+                {
+                    p = p + 2 * dy;
+                }
+            }
+        }
+        return riverMap;
+    }
+
     private static float[,] PutPoint(float[,] riverMap, Vector2Int position, int radius, float strength = 1.0f)
     {
         for (int y = position.y - radius; y < position.y + radius; y++)
@@ -173,6 +219,23 @@ public static class RiverBuilder
                 if (x > 0 && x < _worldSize.x && y > 0 && y < _worldSize.y)
                 {
                     riverMap[x, y] = strength;
+                }
+            }
+        }
+        return riverMap;
+    }
+
+    private static List<Vector2Int> PutPoint(List<Vector2Int> riverMap, Vector2Int position, int radius, float strength = 1.0f)
+    {
+        for (int y = position.y - radius; y < position.y + radius; y++)
+        {
+            for (int x = position.x - radius; x < position.x + radius; x++)
+            {
+                if (x > 0 && x < _worldSize.x && y > 0 && y < _worldSize.y)
+                {
+                    Vector2Int pointPosition = new Vector2Int(x, y);
+                    if (!riverMap.Contains(pointPosition))
+                        riverMap.Add(pointPosition);
                 }
             }
         }

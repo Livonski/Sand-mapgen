@@ -1,4 +1,6 @@
 using UnityEngine;
+using System.Collections.Generic;
+using System.Diagnostics;
 
 public class WorldGenerator : MonoBehaviour
 {
@@ -20,7 +22,7 @@ public class WorldGenerator : MonoBehaviour
     [SerializeField] private int _edgeThickness;
 
     [SerializeField] public bool _autoUpdate;
-    [SerializeField] private enum DrawMode {FinishedMap, TemperatureMap, MoistureMap, HeightMap, VegetationMap, RiversMap, ResourcesMap, ResourcesDencityMap };
+    [SerializeField] private enum DrawMode {FinishedMap, TemperatureMap, MoistureMap, HeightMap, VegetationMap, ResourcesMap, ResourcesDencityMap };
     [SerializeField] private DrawMode _drawMode;
 
     private SpriteRenderer _spriteRenderer;
@@ -32,7 +34,7 @@ public class WorldGenerator : MonoBehaviour
     private float[,] _temperatureMap;
     private float[,] _moistureMap;
     private float[,] _vegetationMap;
-    private float[,] _riversMap;
+    private List<Vector2Int> _riversMap;
 
     private Texture2D _resourcesMap;
 
@@ -43,11 +45,15 @@ public class WorldGenerator : MonoBehaviour
 
     public void GenerateWorld()
     {
+        Stopwatch sw = Stopwatch.StartNew();
+        sw.Start();
         CreateSprite();
         GenerateBiomeMaps();
         GenerateOutline();
         if(_drawMode != DrawMode.ResourcesMap && _drawMode != DrawMode.ResourcesDencityMap)
             GenerateResources();
+        sw.Stop();
+        UnityEngine.Debug.Log($"World generated in {sw.Elapsed.TotalMilliseconds} ms");
     }
 
     public void DrawMapInInspector()
@@ -77,11 +83,6 @@ public class WorldGenerator : MonoBehaviour
                 GenerateVegetationMap();
                 CreateSprite(_vegetationMap);
                 break;
-            case DrawMode.RiversMap:
-                GenerateHeightMap();
-                GenerateRivers();
-                CreateSprite(_riversMap);
-                break;
             case DrawMode.ResourcesMap:
                 GenerateWorld();
                 GenerateResources();
@@ -107,7 +108,7 @@ public class WorldGenerator : MonoBehaviour
             if (biome.name == name)
                 return biome;
         }
-        Debug.LogWarning($"Biome {name} not found");
+        UnityEngine.Debug.LogWarning($"Biome {name} not found");
         return _biomeData[0];
     }
 
@@ -168,10 +169,10 @@ public class WorldGenerator : MonoBehaviour
         avgVeg = avgVeg / (_worldSize.x * _worldSize.y);
         avgEle = avgEle / (_worldSize.x * _worldSize.y);
 
-        Debug.Log($"Temperature: {minTemp} - {maxTemp}, average: {avgTemp}");
-        Debug.Log($"Moisture: {minMoist} - {maxMoist}, average: {avgMoist}");
-        Debug.Log($"Vegetation: {minVeg} - {maxVeg}, average: {avgVeg}");
-        Debug.Log($"Elevation: {minEle} - {maxEle}, average: {avgEle}");
+        UnityEngine.Debug.Log($"Temperature: {minTemp} - {maxTemp}, average: {avgTemp}");
+        UnityEngine.Debug.Log($"Moisture: {minMoist} - {maxMoist}, average: {avgMoist}");
+        UnityEngine.Debug.Log($"Vegetation: {minVeg} - {maxVeg}, average: {avgVeg}");
+        UnityEngine.Debug.Log($"Elevation: {minEle} - {maxEle}, average: {avgEle}");
     }
 
     private Color EvaluateBiomes(int x, int y)
@@ -190,7 +191,6 @@ public class WorldGenerator : MonoBehaviour
             float score = _biomeData[i].GetBiomeScore(temperature, moisture, elevation, vegetation);
 
             if(score < bestScore && _biomeData[i].IsInRange(temperature, moisture, elevation, vegetation))
-            //if(score < bestScore)
             {
                 bestScore = score;
                 bestColor = _biomeData[i].biomeColor;
@@ -230,7 +230,7 @@ public class WorldGenerator : MonoBehaviour
     private void GenerateHeightMap()
     {
         _heightMap = Noise.GenerateNoiseMap(_worldSize.x, _worldSize.y, _noiseParameters[0]);
-        float[,] voronoiNoiseMap = VoronoiNoise.GenerateNoiseMap(_worldSize.x, _worldSize.y, _TectonicPlatesNum, 1488, _smoothingRadius);
+        float[,] voronoiNoiseMap = VoronoiNoise.GenerateNoiseMap(_worldSize.x, _worldSize.y, _TectonicPlatesNum, _noiseParameters[0].seed, _smoothingRadius);
         for (int y = 0; y < _worldSize.y; y++)
         {
             for (int x = 0; x < _worldSize.x; x++)
@@ -239,12 +239,10 @@ public class WorldGenerator : MonoBehaviour
             }
         }
         GenerateRivers();
-        for (int y = 0; y < _worldSize.y; y++)
+        UnityEngine.Debug.Log(_riversMap.Count);
+        foreach (Vector2Int pos in _riversMap)
         {
-            for (int x = 0; x < _worldSize.x; x++)
-            {
-                _heightMap[x, y] = _riversMap[x, y] == 1 ? (_biomeData[1].elevationRange.x + 0.01f) : _heightMap[x, y];
-            }
+            _heightMap[pos.x, pos.y] = _biomeData[1].elevationRange.x + 0.01f;
         }
     }
 
