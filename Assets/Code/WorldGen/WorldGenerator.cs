@@ -14,6 +14,8 @@ public class WorldGenerator : MonoBehaviour
     [SerializeField] private float _heightNoiseStrength;
 
     [SerializeField] private NoiseParameters[] _noiseParameters;
+    [SerializeField] private PerlinNoise _perlinNoise;
+
     [SerializeField] private BiomeData[] _biomeData;
 
     [SerializeField] private int _TectonicPlatesNum;
@@ -128,6 +130,9 @@ public class WorldGenerator : MonoBehaviour
         GenerateHeightMap();
         GenerateVegetationMap();
 
+        Stopwatch sw = Stopwatch.StartNew();
+        sw.Start();
+
         for (int y = 0; y < _worldSize.y; y++)
         {
             for (int x = 0; x < _worldSize.x; x++)
@@ -166,6 +171,9 @@ public class WorldGenerator : MonoBehaviour
         UnityEngine.Debug.Log($"Moisture: {minMoist} - {maxMoist}, average: {avgMoist}");
         UnityEngine.Debug.Log($"Vegetation: {minVeg} - {maxVeg}, average: {avgVeg}");
         UnityEngine.Debug.Log($"Elevation: {minEle} - {maxEle}, average: {avgEle}");
+
+        sw.Stop();
+        UnityEngine.Debug.Log($"Biomes evaluated in {sw.ElapsedMilliseconds} ms");
     }
 
     private Color EvaluateBiomes(int x, int y)
@@ -198,7 +206,9 @@ public class WorldGenerator : MonoBehaviour
 
     private void GenerateTemperatureMap()
     {
-        _temperatureMap = Noise.GenerateNoiseMap(_worldSize.x, _worldSize.y, _noiseParameters[2]);
+        Stopwatch sw = Stopwatch.StartNew();
+        sw.Start();
+        _temperatureMap = _perlinNoise.GenerateNoiseMap(_worldSize.x, _worldSize.y, _noiseParameters[2]);
         float halfWorldSize = (float)_worldSize.y / 2;
         for (int y = 0; y < _worldSize.y; y++)
         {
@@ -208,21 +218,33 @@ public class WorldGenerator : MonoBehaviour
                 _temperatureMap[x, y] = Mathf.Clamp01((_temperatureMap[x,y] * _temperatureNoiseStrength) + gradientValue * (1 - _temperatureNoiseStrength));
             }
         }
+        sw.Stop();
+        UnityEngine.Debug.Log($"Temperature map generated in {sw.ElapsedMilliseconds} ms");
     }
 
     private void GenerateMoistureMap()
     {
-        _moistureMap = Noise.GenerateNoiseMap(_worldSize.x, _worldSize.y, _noiseParameters[1]);
+        Stopwatch sw = Stopwatch.StartNew();
+        sw.Start();
+        _moistureMap = _perlinNoise.GenerateNoiseMap(_worldSize.x,_worldSize.y, _noiseParameters[1]);
+        sw.Stop();
+        UnityEngine.Debug.Log($"Moisture map generated in {sw.ElapsedMilliseconds} ms");
     }
 
     private void GenerateVegetationMap()
     {
-        _vegetationMap = Noise.GenerateNoiseMap(_worldSize.x, _worldSize.y, _noiseParameters[3]);
+        Stopwatch sw = Stopwatch.StartNew();
+        sw.Start();
+        _vegetationMap = _perlinNoise.GenerateNoiseMap(_worldSize.x, _worldSize.y, _noiseParameters[3]);
+        sw.Stop();
+        UnityEngine.Debug.Log($"Vegetation map generated in {sw.ElapsedMilliseconds} ms");
     }
 
     private void GenerateHeightMap()
     {
-        _heightMap = Noise.GenerateNoiseMap(_worldSize.x, _worldSize.y, _noiseParameters[0]);
+        Stopwatch sw = Stopwatch.StartNew();
+        sw.Start();
+        _heightMap = _perlinNoise.GenerateNoiseMap(_worldSize.x, _worldSize.y, _noiseParameters[0]);
         float[,] voronoiNoiseMap = VoronoiNoise.GenerateNoiseMap(_worldSize.x, _worldSize.y, _TectonicPlatesNum, _noiseParameters[0].seed, _smoothingRadius);
         for (int y = 0; y < _worldSize.y; y++)
         {
@@ -231,6 +253,8 @@ public class WorldGenerator : MonoBehaviour
                 _heightMap[x, y] = (_heightMap[x, y] * _heightNoiseStrength) + (voronoiNoiseMap[x,y] * (1 - _heightNoiseStrength));
             }
         }
+        sw.Stop();
+        UnityEngine.Debug.Log($"Height map generated in {sw.ElapsedMilliseconds} ms");
         GenerateRivers();
         UnityEngine.Debug.Log($"num points in _rivers map {_riversMap.Count}");
         foreach (Vector2Int pos in _riversMap)

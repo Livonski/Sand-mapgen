@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using static Noise;
 
 public class PerlinNoiseDisplay : MonoBehaviour
 {
@@ -9,6 +10,10 @@ public class PerlinNoiseDisplay : MonoBehaviour
     [SerializeField] private Vector2Int _textureSize;
 
     [SerializeField] private SpriteRenderer _spriteRenderer;
+    private enum PerlinNoiseType {CPU, GPU };
+    [SerializeField] private PerlinNoiseType _noiseType;
+
+
     private RenderTexture _noiseTexture;
     private Texture2D _outputTexture;
 
@@ -17,40 +22,52 @@ public class PerlinNoiseDisplay : MonoBehaviour
     private void Start()
     {
         kernelID = _perlinNoiseShader.FindKernel("CSMain");
-        InitializeTexture();
-        UpdateShaderParameters();
+        if (_noiseType == PerlinNoiseType.GPU)
+        {
+            InitializeTexture();
+            UpdateShaderParameters();
 
-        int threadGroupsX = Mathf.CeilToInt(_textureSize.x / 8.0f);
-        int threadGroupsY = Mathf.CeilToInt(_textureSize.y / 8.0f);
+            int threadGroupsX = Mathf.CeilToInt(_textureSize.x / 8.0f);
+            int threadGroupsY = Mathf.CeilToInt(_textureSize.y / 8.0f);
 
-        _perlinNoiseShader.Dispatch(kernelID, threadGroupsY, threadGroupsX, 1);
+            _perlinNoiseShader.Dispatch(kernelID, threadGroupsY, threadGroupsX, 1);
 
-        CopyRenderTextureToTexture2D();
+            CopyRenderTextureToTexture2D();
 
-        ApplyTextureToSprite();
-        DebugInfo();
+            ApplyTextureToSprite();
+            DebugInfo();
+        }
+        else
+        {
+            InitializeTexture();
+            float[,] _noiseMap = Noise.GenerateNoiseMap(_textureSize.x, _textureSize.y, _noiseParameters);
+            _outputTexture = FArrToTexture2D(_noiseMap, _textureSize);
+
+            ApplyTextureToSprite();
+        }
     }
 
     private void Update()
     {
-        UpdateShaderParameters();
+        if (_noiseType == PerlinNoiseType.GPU)
+        {
+            UpdateShaderParameters();
 
-        int threadGroupsX = Mathf.CeilToInt(_textureSize.x / 8.0f);
-        int threadGroupsY = Mathf.CeilToInt(_textureSize.y / 8.0f);
+            int threadGroupsX = Mathf.CeilToInt(_textureSize.x / 8.0f);
+            int threadGroupsY = Mathf.CeilToInt(_textureSize.y / 8.0f);
 
-        _perlinNoiseShader.Dispatch(kernelID, threadGroupsY, threadGroupsX, 1);
+            _perlinNoiseShader.Dispatch(kernelID, threadGroupsY, threadGroupsX, 1);
 
-        CopyRenderTextureToTexture2D();
+            CopyRenderTextureToTexture2D();
+        }
     }
 
     private void InitializeTexture()
     {
-        //_noiseTexture = new RenderTexture(_textureSize.x, _textureSize.y, 0, RenderTextureFormat.ARGBFloat);
         _noiseTexture = new RenderTexture(_textureSize.x, _textureSize.y, 0, RenderTextureFormat.ARGB32);
         _noiseTexture.enableRandomWrite = true;
         _noiseTexture.Create();
 
-        //_outputTexture = new Texture2D(_textureSize.x, _textureSize.y, TextureFormat.RGBAFloat, false);
         _outputTexture = new Texture2D(_textureSize.x, _textureSize.y, TextureFormat.ARGB32, false);
 
         _perlinNoiseShader.SetTexture(kernelID, "OutputTexture", _noiseTexture);
@@ -78,6 +95,7 @@ public class PerlinNoiseDisplay : MonoBehaviour
         RenderTexture.active = _noiseTexture;
         _outputTexture.ReadPixels(new Rect(0, 0, _textureSize.x, _textureSize.y), 0, 0);
         _outputTexture.Apply();
+        //NormalizeTexture();
         RenderTexture.active = null;
     }
 
@@ -85,6 +103,21 @@ public class PerlinNoiseDisplay : MonoBehaviour
     {
         Sprite newSprite = Sprite.Create(_outputTexture, new Rect(0, 0, _textureSize.x, _textureSize.y), new Vector2(0.5f, 0.5f));
         _spriteRenderer.sprite = newSprite;
+    }
+
+    private Texture2D FArrToTexture2D(float[,] map, Vector2Int textureSize)
+    {
+        Texture2D output = new Texture2D(textureSize.x, textureSize.y, TextureFormat.ARGB32, false);
+        for (int y = 0; y < textureSize.y; y++)
+        {
+            for (int x = 0; x < textureSize.x; x++)
+            {
+                Color mapColor = new Color(map[x, y], map[x, y], map[x, y]);
+                output.SetPixel(x, y, mapColor);
+            }
+        }
+        output.Apply();
+        return output;
     }
 
     private void OnDestroy()

@@ -79,6 +79,7 @@ float FractalNoise(float2 coord, int octaves)
     
     noiseValue /= maxAmplitude;
     return NormalizeNoiseValue(noiseValue);
+    return noiseValue;
     
 }
 
