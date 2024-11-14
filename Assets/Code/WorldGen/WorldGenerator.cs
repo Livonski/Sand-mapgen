@@ -36,7 +36,7 @@ public class WorldGenerator : MonoBehaviour
     private float[,] _vegetationMap;
     private List<Vector2Int> _riversMap;
 
-    private Texture2D _resourcesMap;
+    private List<PointValue> _resourcesMap;
 
     private void Start()
     {
@@ -53,7 +53,7 @@ public class WorldGenerator : MonoBehaviour
         if(_drawMode != DrawMode.ResourcesMap && _drawMode != DrawMode.ResourcesDencityMap)
             GenerateResources();
         sw.Stop();
-        UnityEngine.Debug.Log($"World generated in {sw.Elapsed.TotalMilliseconds} ms");
+        UnityEngine.Debug.Log($"World generated in {sw.ElapsedMilliseconds} ms");
     }
 
     public void DrawMapInInspector()
@@ -83,15 +83,8 @@ public class WorldGenerator : MonoBehaviour
                 GenerateVegetationMap();
                 CreateSprite(_vegetationMap);
                 break;
-            case DrawMode.ResourcesMap:
+            default:
                 GenerateWorld();
-                GenerateResources();
-                CreateSprite(_resourcesMap);
-                break;
-            case DrawMode.ResourcesDencityMap:
-                GenerateWorld();
-                GenerateResources();
-                CreateSprite(_resourcesMap);
                 break;
         }
     }
@@ -239,7 +232,7 @@ public class WorldGenerator : MonoBehaviour
             }
         }
         GenerateRivers();
-        UnityEngine.Debug.Log(_riversMap.Count);
+        UnityEngine.Debug.Log($"num points in _rivers map {_riversMap.Count}");
         foreach (Vector2Int pos in _riversMap)
         {
             _heightMap[pos.x, pos.y] = _biomeData[1].elevationRange.x + 0.01f;
@@ -249,7 +242,11 @@ public class WorldGenerator : MonoBehaviour
     private void GenerateRivers()
     {
         GenerateMoistureMap();
+        Stopwatch sw = Stopwatch.StartNew();
+        sw.Start();
         _riversMap = RiverBuilder.GenerateRivers(_worldSize, _riverGenerationParameters, _heightMap, _moistureMap);
+        sw.Stop();
+        UnityEngine.Debug.Log($"Rivers generated in {sw.ElapsedMilliseconds} ms");
     }
 
     private void GenerateOutline()
@@ -292,25 +289,16 @@ public class WorldGenerator : MonoBehaviour
 
     private void GenerateResources()
     {
+        Stopwatch sw = Stopwatch.StartNew();
+        sw.Start();
         ResourceGenerator resourceGenerator = GetComponent<ResourceGenerator>();
-
-        //This is ugly 
-        if (_drawMode == DrawMode.ResourcesDencityMap)
+        _resourcesMap = resourceGenerator.GenerateResourcesMap(_worldSize, _world);
+        sw.Stop();
+        UnityEngine.Debug.Log($"Resources generated in {sw.ElapsedMilliseconds} ms");
+        UnityEngine.Debug.Log($"num points in resources map {_resourcesMap.Count}");
+        foreach (PointValue pv in _resourcesMap)
         {
-            _resourcesMap = resourceGenerator.GenerateDensityMap(_worldSize, _world);
-        }
-        else
-        {
-            _resourcesMap = resourceGenerator.GenerateResourcesMap(_worldSize, _world);
-        }
-
-        for (int y = 0; y < _worldSize.y; y++)
-        {
-            for (int x = 0; x < _worldSize.x; x++)
-            {
-                if (_resourcesMap.GetPixel(x, y) != Color.clear)
-                    _world.SetPixel(x, y, _resourcesMap.GetPixel(x, y));
-            }
+            _world.SetPixel(pv.position.x,pv.position.y,pv.color);
         }
         _world.Apply();
     }

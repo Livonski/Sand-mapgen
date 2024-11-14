@@ -8,14 +8,14 @@ public class ResourceGenerator : MonoBehaviour
     [SerializeField] private Resource[] _resources;
     [SerializeField] private NoiseParameters _patchesNoise;
 
-    Texture2D _resourcesMap;
+    List<PointValue> _resourcesMap;
     private Texture2D _densityMap;
 
     private Vector2Int _worldSize = Vector2Int.zero;
     private Texture2D _world;
     private WorldGenerator _worldGenerator;
 
-    public Texture2D GenerateResourcesMap(Vector2Int worldSize, Texture2D world)
+    public List<PointValue> GenerateResourcesMap(Vector2Int worldSize, Texture2D world)
     {
         _worldSize = worldSize;
         _world = world;
@@ -27,14 +27,6 @@ public class ResourceGenerator : MonoBehaviour
 
         return _resourcesMap;
     }
-
-    public Texture2D GenerateDensityMap(Vector2Int worldSize, Texture2D world)
-    {
-        GenerateResourcesMap(worldSize, world);
-
-        return _densityMap;
-    }
-
 
     private void CalculatePreferedColors()
     {
@@ -69,12 +61,26 @@ public class ResourceGenerator : MonoBehaviour
                 Color[] worldSlice = _world.GetPixels(topLeftCorner.x, topLeftCorner.y, patchSize.x, patchSize.y);
                 ResourcePatch resourcePatch = new ResourcePatch(resource,noiseParameters, patchSize, patchPosition, worldSlice, resource.sineWaveParams);
                 //Debug.Log($"Generating {resource.name}, {i} patch at {patchPosition}, with size {patchSize}, topLeftCorner {topLeftCorner}");
-                Color[] patchMap = resourcePatch.GenerateResourcePatch().GetPixels();
+                List<PointValue> patchMap = resourcePatch.GenerateResourcePatch();
 
-                _resourcesMap.SetPixels(topLeftCorner.x, topLeftCorner.y, patchSize.x, patchSize.y, patchMap);
-                _resourcesMap.Apply();
+                //_resourcesMap.SetPixels(topLeftCorner.x, topLeftCorner.y, patchSize.x, patchSize.y, patchMap);
+                //_resourcesMap.Apply();
+                //_resourcesMap = AddPoints(topLeftCorner, patchMap, _resourcesMap);
+                _resourcesMap = AddPoints(topLeftCorner, _resourcesMap, patchMap);
             }
         }
+    }
+
+    private List<PointValue> AddPoints(Vector2Int patchPosition, List<PointValue> main, List<PointValue> newPatch)
+    {
+        foreach (PointValue point in newPatch)
+        {
+            Vector2Int globalPosition = patchPosition + point.position;
+            PointValue newPoint = new PointValue(globalPosition,point.color);
+            if(!main.Contains(newPoint))
+                main.Add(newPoint);
+        }
+        return main;
     }
 
     private Vector2Int[] GeneratePoints(Resource resource)
@@ -148,20 +154,18 @@ public class ResourceGenerator : MonoBehaviour
 
     private void InitializeMaps()
     {
-        _resourcesMap = new Texture2D(_worldSize.x, _worldSize.y, TextureFormat.ARGB32, false);
+        _resourcesMap = new List<PointValue>();
         _densityMap = new Texture2D(_worldSize.x, _worldSize.y, TextureFormat.ARGB32, false);
 
         for (int y = 0; y < _worldSize.y; y++)
         {
             for (int x = 0; x < _worldSize.x; x++)
             {
-                _resourcesMap.SetPixel(x, y, Color.clear);
                 _densityMap.SetPixel(x, y, Color.black);
             }
         }
 
         _densityMap.Apply();
-        _resourcesMap.Apply();
     }
 
     private void PutPoint(Vector2Int position, int radius)
@@ -237,19 +241,18 @@ public class ResourcePatch
         _localCenterPoint = new Vector2Int(patchSize.x / 2, patchSize.y / 2);
     }
 
-    public Texture2D GenerateResourcePatch()
+    public List<PointValue> GenerateResourcePatch()
     {
-        Texture2D patchTexture = GeneratePatchArea();
-        patchTexture.Apply();
+        List<PointValue> patchTexture = GeneratePatchArea();
         
         return patchTexture;
     }
 
-    private Texture2D GeneratePatchArea()
+    private List<PointValue> GeneratePatchArea()
     {
         //TODO: probably need to revrite this into interface/delegate system because it's horrible
         _patchNoise = Noise.GenerateNoiseMap(_size.x, _size.y, _noiseParameters);
-        Texture2D output = new Texture2D(_size.x, _size.y, TextureFormat.ARGB32, false);
+        List<PointValue> output = new List<PointValue>();
         for (int y = 0; y < _size.y; y++)
         {
             for (int x = 0; x < _size.x; x++)
@@ -278,7 +281,8 @@ public class ResourcePatch
                         pixelColor = _resource.isPreferedBiome(_worldSlice[y * _size.x + x]) && pixelValue > 0.5f && waveColor > 0.7f && randomValue >= (100 - _resource.density) ? _resource.color : Color.clear;
                         break;
                 }
-                output.SetPixel(x, y, pixelColor);
+                if (pixelColor != Color.red && pixelColor != Color.clear)
+                    output.Add(new PointValue(new Vector2Int(x, y), pixelColor));
             }
         }
         return output;
@@ -299,4 +303,16 @@ public enum ResourceGenerationPattern
     dots,
     area,
     stripes
+}
+
+public struct PointValue
+{
+    public Vector2Int position;
+    public Color color;
+
+    public PointValue(Vector2Int position, Color color)
+    {
+        this.position = position;
+        this.color = color;
+    }
 }
