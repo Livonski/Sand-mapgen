@@ -38,7 +38,7 @@ public class WorldGenerator : MonoBehaviour
     private float[,] _vegetationMap;
     private List<Vector2Int> _riversMap;
 
-    private List<PointValue> _resourcesMap;
+    private HashSet<PointValue> _resourcesMap;
 
     private void Start()
     {

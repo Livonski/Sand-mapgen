@@ -2,20 +2,23 @@ using Unity.VisualScripting;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UIElements;
+using System.Diagnostics;
+using System.Linq;
+using System.Runtime.CompilerServices;
 
 public class ResourceGenerator : MonoBehaviour
 {
     [SerializeField] private Resource[] _resources;
     [SerializeField] private NoiseParameters _patchesNoise;
 
-    List<PointValue> _resourcesMap;
-    private Texture2D _densityMap;
+    HashSet<PointValue> _resourcesMap;
+    private float[,] _densityMap;
 
     private Vector2Int _worldSize = Vector2Int.zero;
     private Texture2D _world;
     private WorldGenerator _worldGenerator;
 
-    public List<PointValue> GenerateResourcesMap(Vector2Int worldSize, Texture2D world)
+    public HashSet<PointValue> GenerateResourcesMap(Vector2Int worldSize, Texture2D world)
     {
         _worldSize = worldSize;
         _world = world;
@@ -43,15 +46,31 @@ public class ResourceGenerator : MonoBehaviour
 
     private void GenerateResources()
     {
+        float avgPointGenTime = 0;
+
+        float avgPatchGenTime = 0;
+        int totalPatchesGenerated = 0;
+
         foreach (var resource in _resources)
         {
+            if(resource.numPatches == 0)
+                continue;
+            Stopwatch sw = new Stopwatch();
+            sw.Start();
+
             Vector2Int[] points = GeneratePoints(resource);
+
+            sw.Stop();
+            avgPointGenTime += sw.ElapsedMilliseconds;
+            
             for (int i = 0; i < resource.numPatches; i++)
             {
+                sw.Restart();
+
                 Vector2Int patchPosition = points[i];
                 Vector2Int patchSize = CalculateSize(resource, patchPosition);
 
-                PutPoint(patchPosition,Mathf.Max(patchSize.x,patchSize.y));
+                PutPoint(patchPosition, Mathf.Max(patchSize.x, patchSize.y));
 
                 Vector2Int topLeftCorner = new Vector2Int(Mathf.Max(0, patchPosition.x - patchSize.x / 2), Mathf.Max(0, patchPosition.y - patchSize.y / 2));
 
@@ -59,26 +78,29 @@ public class ResourceGenerator : MonoBehaviour
                 noiseParameters.seed = i;
 
                 Color[] worldSlice = _world.GetPixels(topLeftCorner.x, topLeftCorner.y, patchSize.x, patchSize.y);
-                ResourcePatch resourcePatch = new ResourcePatch(resource,noiseParameters, patchSize, patchPosition, worldSlice, resource.sineWaveParams);
-                //Debug.Log($"Generating {resource.name}, {i} patch at {patchPosition}, with size {patchSize}, topLeftCorner {topLeftCorner}");
+                ResourcePatch resourcePatch = new ResourcePatch(resource, noiseParameters, patchSize, patchPosition, worldSlice, resource.sineWaveParams);
                 List<PointValue> patchMap = resourcePatch.GenerateResourcePatch();
 
-                //_resourcesMap.SetPixels(topLeftCorner.x, topLeftCorner.y, patchSize.x, patchSize.y, patchMap);
-                //_resourcesMap.Apply();
-                //_resourcesMap = AddPoints(topLeftCorner, patchMap, _resourcesMap);
                 _resourcesMap = AddPoints(topLeftCorner, _resourcesMap, patchMap);
+
+                sw.Stop();
+                avgPatchGenTime += sw.ElapsedMilliseconds;
+                totalPatchesGenerated++;
             }
         }
+
+        UnityEngine.Debug.Log($"Average resources point generation time: {avgPointGenTime / _resources.Length} ms, total: {avgPointGenTime} ms");
+        UnityEngine.Debug.Log($"Average resources patch generation time: {avgPatchGenTime / totalPatchesGenerated} ms, total: {avgPatchGenTime} ms");
+
     }
 
-    private List<PointValue> AddPoints(Vector2Int patchPosition, List<PointValue> main, List<PointValue> newPatch)
+    private HashSet<PointValue> AddPoints(Vector2Int patchPosition, HashSet<PointValue> main, List<PointValue> newPatch)
     {
         foreach (PointValue point in newPatch)
         {
             Vector2Int globalPosition = patchPosition + point.position;
-            PointValue newPoint = new PointValue(globalPosition,point.color);
-            if(!main.Contains(newPoint))
-                main.Add(newPoint);
+            PointValue newPoint = new PointValue(globalPosition, point.color);
+            main.Add(newPoint);
         }
         return main;
     }
@@ -87,22 +109,22 @@ public class ResourceGenerator : MonoBehaviour
     {
         Vector2Int[] points = new Vector2Int[resource.numPatches];
 
-        List<float> possiblePointsWeights;
-        List<Vector2Int> possiblePoints = GeneratePossiblePoints(resource, out possiblePointsWeights);
+        HashSet<PossiblePoint> possiblePoints = GeneratePossiblePoints(resource);
+        UnityEngine.Debug.Log($"number of possible points for {resource.name} {possiblePoints.Count}");
 
         for (int i = 0; i < resource.numPatches; i++)
         {
-            points[i] = GetRandomWeightedPoint(possiblePoints,possiblePointsWeights);
+            points[i] = GetRandomWeightedPoint(possiblePoints.ToList<PossiblePoint>());
         }
         return points;
     }
 
-    private Vector2Int GetRandomWeightedPoint(List<Vector2Int> possiblePoints, List<float> weights)
+    private Vector2Int GetRandomWeightedPoint(List<PossiblePoint> possiblePoints)
     {
         float totalWeight = 0.0f;
-        foreach (float weight in weights)
+        foreach (PossiblePoint p in possiblePoints)
         {
-            totalWeight += weight;
+            totalWeight += p.weight;
         }
 
         float rand = Random.Range(0, totalWeight);
@@ -110,27 +132,26 @@ public class ResourceGenerator : MonoBehaviour
 
         for (int i = 0; i < possiblePoints.Count; i++)
         {
-            cumulativeWeight += weights[i];
+            cumulativeWeight += possiblePoints[i].weight;
             if (rand <= cumulativeWeight)
-                return possiblePoints[i];
+                return possiblePoints[i].position;
         }
 
-        return possiblePoints[possiblePoints.Count - 1];
+        return Vector2Int.zero;
     }
 
-    private List<Vector2Int> GeneratePossiblePoints(Resource resource, out List<float> weights)
+    private HashSet<PossiblePoint> GeneratePossiblePoints(Resource resource)
     {
-        List<Vector2Int> possiblePoints = new List<Vector2Int>();
-        weights = new List<float>();
+        HashSet<PossiblePoint> possiblePoints = new HashSet<PossiblePoint>();
         for (int y = 0; y < _worldSize.y; y++)
         {
             for (int x = 0; x < _worldSize.x; x++)
             {
-                if(resource.isPreferedBiome(_world.GetPixel(x, y)))
+                if (resource.IsPreferedBiome(_world.GetPixel(x, y)))
                 {
-                    possiblePoints.Add(new Vector2Int(x, y));
-                    float weight = 1.0f - _densityMap.GetPixel(x,y).r;
-                    weights.Add(weight);
+                    float weight = 1.0f - _densityMap[x,y];
+                    PossiblePoint newPoint = new PossiblePoint(new Vector2Int(x, y), weight);
+                    possiblePoints.Add(newPoint);
                 }
             }
         }
@@ -154,18 +175,17 @@ public class ResourceGenerator : MonoBehaviour
 
     private void InitializeMaps()
     {
-        _resourcesMap = new List<PointValue>();
-        _densityMap = new Texture2D(_worldSize.x, _worldSize.y, TextureFormat.ARGB32, false);
+        _resourcesMap = new HashSet<PointValue>();
+        _densityMap = new float[_worldSize.x, _worldSize.y];
 
         for (int y = 0; y < _worldSize.y; y++)
         {
             for (int x = 0; x < _worldSize.x; x++)
             {
-                _densityMap.SetPixel(x, y, Color.black);
+                _densityMap[x, y] = 0;
             }
         }
 
-        _densityMap.Apply();
     }
 
     private void PutPoint(Vector2Int position, int radius)
@@ -176,14 +196,12 @@ public class ResourceGenerator : MonoBehaviour
             {
                 if (x > 0 && x < _worldSize.x && y > 0 && y < _worldSize.y)
                 {
-                    float strength = 1 - Vector2Int.Distance(position,new Vector2Int(x,y)) / radius;
-                    strength = Mathf.Clamp01(strength + _densityMap.GetPixel(x, y).r);
-                    Color pixelColor = new Color(strength,strength,strength);
-                    _densityMap.SetPixel(x, y, pixelColor);
+                    float strength = 1 - Vector2Int.Distance(position, new Vector2Int(x, y)) / radius;
+                    strength = Mathf.Clamp01(strength + _densityMap[x, y]);
+                    _densityMap[x,y] = strength;
                 }
             }
         }
-        _densityMap.Apply();
     }
 }
 
@@ -204,11 +222,11 @@ public struct Resource
     public ResourceGenerationPattern generationPattern;
     public SineWaveParams sineWaveParams;
 
-    public bool isPreferedBiome(Color biomeColor)
+    public bool IsPreferedBiome(Color biomeColor)
     {
-        foreach(Color color in preferedBiomesColors)
+        foreach (var color in preferedBiomesColors)
         {
-            if (biomeColor == color) 
+            if (color == biomeColor)
                 return true;
         }
         return false;
@@ -229,7 +247,7 @@ public class ResourcePatch
     private Vector2Int _size;
     private Vector2Int _position;
     private Vector2Int _localCenterPoint;
-    
+
     public ResourcePatch(Resource resource, NoiseParameters noiseParameters, Vector2Int patchSize, Vector2Int patchPosition, Color[] worldSlice, SineWaveParams sineWaveParams)
     {
         _resource = resource;
@@ -244,7 +262,7 @@ public class ResourcePatch
     public List<PointValue> GenerateResourcePatch()
     {
         List<PointValue> patchTexture = GeneratePatchArea();
-        
+
         return patchTexture;
     }
 
@@ -263,12 +281,12 @@ public class ResourcePatch
                 switch (_resource.generationPattern)
                 {
                     case ResourceGenerationPattern.area:
-                        pixelColor = (_resource.isPreferedBiome(_worldSlice[y * _size.x + x]) && pixelValue > 0.5f) ? _resource.color : Color.clear;
+                        pixelColor = (_resource.IsPreferedBiome(_worldSlice[y * _size.x + x]) && pixelValue > 0.5f) ? _resource.color : Color.clear;
                         break;
 
                     case ResourceGenerationPattern.dots:
                         int randomValue = Random.Range(0, 100);
-                        pixelColor = (_resource.isPreferedBiome(_worldSlice[y * _size.x + x]) && pixelValue > 0.5f && randomValue >= (100 - _resource.density)) ? _resource.color : Color.clear;
+                        pixelColor = (_resource.IsPreferedBiome(_worldSlice[y * _size.x + x]) && pixelValue > 0.5f && randomValue >= (100 - _resource.density)) ? _resource.color : Color.clear;
                         break;
 
                     case ResourceGenerationPattern.stripes:
@@ -277,8 +295,8 @@ public class ResourcePatch
                         float yWobble = Mathf.Sin(x * _sineWaveParams.wobbleFrequency.y) * _sineWaveParams.wobbleFrequency.y;
 
                         float waveColor = Mathf.Sin((x + xWobble) * _sineWaveParams.frequency + (y + yWobble) * _sineWaveParams.frequency) * _sineWaveParams.amplitude;
-                        waveColor = Mathf.InverseLerp(-_sineWaveParams.amplitude,_sineWaveParams.amplitude, waveColor);
-                        pixelColor = _resource.isPreferedBiome(_worldSlice[y * _size.x + x]) && pixelValue > 0.5f && waveColor > 0.7f && randomValue >= (100 - _resource.density) ? _resource.color : Color.clear;
+                        waveColor = Mathf.InverseLerp(-_sineWaveParams.amplitude, _sineWaveParams.amplitude, waveColor);
+                        pixelColor = _resource.IsPreferedBiome(_worldSlice[y * _size.x + x]) && pixelValue > 0.5f && waveColor > 0.7f && randomValue >= (100 - _resource.density) ? _resource.color : Color.clear;
                         break;
                 }
                 if (pixelColor != Color.red && pixelColor != Color.clear)
@@ -314,5 +332,17 @@ public struct PointValue
     {
         this.position = position;
         this.color = color;
+    }
+}
+
+public struct PossiblePoint
+{
+    public Vector2Int position;
+    public float weight;
+
+    public PossiblePoint(Vector2Int position, float weight)
+    {
+        this.position = position;
+        this.weight = weight;
     }
 }

@@ -24,7 +24,7 @@ public class PerlinNoise : MonoBehaviour
         int threadGroupsX = Mathf.CeilToInt(_textureSize.x / 8.0f);
         int threadGroupsY = Mathf.CeilToInt(_textureSize.y / 8.0f);
 
-        _perlinNoiseShader.Dispatch(_kernelID, threadGroupsY, threadGroupsX, 1);
+        _perlinNoiseShader.Dispatch(_kernelID, threadGroupsX, threadGroupsY, 1);
         CopyRenderTextureToTexture2D();
         float[,] output = Texture2DToFArr(_outputTexture);
         return output;
