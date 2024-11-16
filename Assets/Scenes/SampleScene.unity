@@ -122,6 +122,53 @@ NavMeshSettings:
     debug:
       m_Flags: 0
   m_NavMeshData: {fileID: 0}
+--- !u!1 &287180795
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 287180797}
+  - component: {fileID: 287180796}
+  m_Layer: 0
+  m_Name: JobsTest
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &287180796
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 287180795}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1620d39bfc9b3fc488cd2a4bf9e0cf4f, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  _worldSize: {x: 1024, y: 1024}
+  _numPoints: 5
+  _numResources: 10
+--- !u!4 &287180797
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 287180795}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &519420028
 GameObject:
   m_ObjectHideFlags: 0
@@ -408,7 +455,7 @@ Sprite:
         format: 0
         dimension: 0
       m_DataSize: 80
-      _typelessdata: 000000bf0000003f000000000000003f000000bf000000000000003f0000003f00000000000000bf000000bf000000000000000000000000000000000000000000000000000000000000000000000000
+      _typelessdata: 000000bf0000003f000000000000003f000000bf000000000000003f0000003f00000000000000bf000000bf00000000000000000000803f0000803f000000000000803f0000803f0000000000000000
     m_Bindpose: []
     textureRect:
       serializedVersion: 2
@@ -709,7 +756,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!114 &2053157055
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1033,6 +1080,7 @@ MonoBehaviour:
     numPatches: 5
     preferedBiomes:
     - b_Grasslands
+    preferedBiomesColors: []
     generationPattern: 1
     sineWaveParams:
       frequency: 0
@@ -1069,6 +1117,7 @@ MonoBehaviour:
     numPatches: 3
     preferedBiomes:
     - b_Water
+    preferedBiomesColors: []
     generationPattern: 0
     sineWaveParams:
       frequency: 0
@@ -1105,6 +1154,7 @@ MonoBehaviour:
     numPatches: 3
     preferedBiomes:
     - b_Mountains
+    preferedBiomesColors: []
     generationPattern: 2
     sineWaveParams:
       frequency: 1
@@ -1141,6 +1191,7 @@ MonoBehaviour:
     numPatches: 0
     preferedBiomes:
     - b_Mountains
+    preferedBiomesColors: []
     generationPattern: 2
     sineWaveParams:
       frequency: 1
@@ -1177,6 +1228,7 @@ MonoBehaviour:
     numPatches: 1
     preferedBiomes:
     - b_Mountains
+    preferedBiomesColors: []
     generationPattern: 0
     sineWaveParams:
       frequency: 0
@@ -1216,6 +1268,7 @@ MonoBehaviour:
     - b_Grasslands
     - b_Steppes
     - b_Swamp
+    preferedBiomesColors: []
     generationPattern: 0
     sineWaveParams:
       frequency: 0
@@ -1254,6 +1307,7 @@ MonoBehaviour:
     - b_Desert
     - b_Grasslands
     - b_Steppes
+    preferedBiomesColors: []
     generationPattern: 2
     sineWaveParams:
       frequency: 1
@@ -1290,6 +1344,7 @@ MonoBehaviour:
     numPatches: 0
     preferedBiomes:
     - b_Grasslands
+    preferedBiomesColors: []
     generationPattern: 1
     sineWaveParams:
       frequency: 0
@@ -1336,6 +1391,7 @@ MonoBehaviour:
     preferedBiomes:
     - b_Grasslands
     - b_Steppes
+    preferedBiomesColors: []
     generationPattern: 1
     sineWaveParams:
       frequency: 0
@@ -1372,6 +1428,7 @@ MonoBehaviour:
     numPatches: 3
     preferedBiomes:
     - b_Forest
+    preferedBiomesColors: []
     generationPattern: 0
     sineWaveParams:
       frequency: 0
@@ -1408,6 +1465,7 @@ MonoBehaviour:
     numPatches: 3
     preferedBiomes:
     - b_Forest
+    preferedBiomesColors: []
     generationPattern: 0
     sineWaveParams:
       frequency: 0
@@ -1444,6 +1502,7 @@ MonoBehaviour:
     numPatches: 0
     preferedBiomes:
     - b_Forest
+    preferedBiomesColors: []
     generationPattern: 0
     sineWaveParams:
       frequency: 0
@@ -1480,6 +1539,7 @@ MonoBehaviour:
     numPatches: 0
     preferedBiomes:
     - b_Water
+    preferedBiomesColors: []
     generationPattern: 0
     sineWaveParams:
       frequency: 0
@@ -1516,6 +1576,7 @@ MonoBehaviour:
     numPatches: 0
     preferedBiomes:
     - b_Steppes
+    preferedBiomesColors: []
     generationPattern: 1
     sineWaveParams:
       frequency: 0
@@ -1552,6 +1613,7 @@ MonoBehaviour:
     numPatches: 5
     preferedBiomes:
     - b_Mountains
+    preferedBiomesColors: []
     generationPattern: 0
     sineWaveParams:
       frequency: 0
@@ -1587,3 +1649,4 @@ SceneRoots:
   - {fileID: 2053157057}
   - {fileID: 1534780774}
   - {fileID: 1153589771}
+  - {fileID: 287180797}

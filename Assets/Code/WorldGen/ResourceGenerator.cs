@@ -1,10 +1,10 @@
-using Unity.VisualScripting;
+
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.UIElements;
 using System.Diagnostics;
 using System.Linq;
-using System.Runtime.CompilerServices;
+using Unity.Collections;
+using Unity.Jobs;
 
 public class ResourceGenerator : MonoBehaviour
 {
@@ -109,12 +109,12 @@ public class ResourceGenerator : MonoBehaviour
     {
         Vector2Int[] points = new Vector2Int[resource.numPatches];
 
-        HashSet<PossiblePoint> possiblePoints = GeneratePossiblePoints(resource);
-        UnityEngine.Debug.Log($"number of possible points for {resource.name} {possiblePoints.Count}");
+        List<PossiblePoint> possiblePoints = GeneratePossiblePoints(resource);
+        //UnityEngine.Debug.Log($"number of possible points for {resource.name} {possiblePoints.Count}");
 
         for (int i = 0; i < resource.numPatches; i++)
         {
-            points[i] = GetRandomWeightedPoint(possiblePoints.ToList<PossiblePoint>());
+            points[i] = GetRandomWeightedPoint(possiblePoints);
         }
         return points;
     }
@@ -140,21 +140,48 @@ public class ResourceGenerator : MonoBehaviour
         return Vector2Int.zero;
     }
 
-    private HashSet<PossiblePoint> GeneratePossiblePoints(Resource resource)
+    private List<PossiblePoint> GeneratePossiblePoints(Resource resource)
     {
-        HashSet<PossiblePoint> possiblePoints = new HashSet<PossiblePoint>();
+        int totalSize = _worldSize.x * _worldSize.y;
+        int numPosisbleValues = resource.preferedBiomesColors.Length;
+        var worldNative = new NativeArray<Color>(totalSize, Allocator.TempJob);
+        var densityMapNative = new NativeArray<float>(totalSize, Allocator.TempJob);
+        var possibleValuesNative = new NativeArray<Color>(numPosisbleValues, Allocator.TempJob);
+        var possiblePointsNative = new NativeList<PossiblePoint>(totalSize, Allocator.TempJob);
+
+        //TODO fix this
+        float[] densityMap = new float[totalSize];
         for (int y = 0; y < _worldSize.y; y++)
         {
             for (int x = 0; x < _worldSize.x; x++)
             {
-                if (resource.IsPreferedBiome(_world.GetPixel(x, y)))
-                {
-                    float weight = 1.0f - _densityMap[x,y];
-                    PossiblePoint newPoint = new PossiblePoint(new Vector2Int(x, y), weight);
-                    possiblePoints.Add(newPoint);
-                }
+                densityMap[y * _worldSize.x + x] = _densityMap[x, y];
             }
         }
+
+        worldNative.CopyFrom(_world.GetPixels());
+        densityMapNative.CopyFrom(densityMap);
+        possibleValuesNative.CopyFrom(resource.preferedBiomesColors);
+
+        var job = new CalculatePossiblePointsJob
+        {
+            world = worldNative,
+            densityMap = densityMapNative,
+            possiblePoints = possiblePointsNative.AsParallelWriter(),
+            width = _worldSize.x,
+            possibleValues = possibleValuesNative
+        };
+
+        JobHandle handle = job.Schedule(totalSize, 64);
+        handle.Complete();
+
+        var possiblePoints = new List<PossiblePoint>(possiblePointsNative.ToArray());
+
+        worldNative.Dispose();
+        densityMapNative.Dispose();
+        possiblePointsNative.Dispose();
+        possibleValuesNative.Dispose();
+
         return possiblePoints;
     }
 
@@ -201,6 +228,38 @@ public class ResourceGenerator : MonoBehaviour
                     _densityMap[x,y] = strength;
                 }
             }
+        }
+    }
+
+    struct CalculatePossiblePointsJob : IJobParallelFor
+    {
+        [ReadOnly] public NativeArray<Color> world;
+        [ReadOnly] public NativeArray<float> densityMap;
+        [ReadOnly] public NativeArray<Color> possibleValues;
+        public NativeList<PossiblePoint>.ParallelWriter possiblePoints;
+        public int width;
+
+        public void Execute(int index)
+        {
+            int x = index % width;
+            int y = index / width;
+
+            if (IsPreferedPoint(world[index], possibleValues))
+            {
+                float weight = 1.0f - densityMap[index];
+                var point = new PossiblePoint(new Vector2Int(x, y), weight);
+                possiblePoints.AddNoResize(point);
+            }
+        }
+
+        private static bool IsPreferedPoint(Color value, NativeArray<Color> possibleValues)
+        {
+            foreach (Color f in possibleValues)
+            {
+                if (f == value)
+                    return true;
+            }
+            return false;
         }
     }
 }
