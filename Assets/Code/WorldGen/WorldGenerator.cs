@@ -317,14 +317,14 @@ public class WorldGenerator : MonoBehaviour
         sw.Start();
         ResourceGenerator resourceGenerator = GetComponent<ResourceGenerator>();
         _resourcesMap = resourceGenerator.GenerateResourcesMap(_worldSize, _world);
-        sw.Stop();
-        UnityEngine.Debug.Log($"Resources generated in {sw.ElapsedMilliseconds} ms");
-        UnityEngine.Debug.Log($"num points in resources map {_resourcesMap.Count}");
         foreach (PointValue pv in _resourcesMap)
         {
             _world.SetPixel(pv.position.x,pv.position.y,pv.color);
         }
         _world.Apply();
+        sw.Stop();
+        UnityEngine.Debug.Log($"Resources generated in {sw.ElapsedMilliseconds} ms");
+        UnityEngine.Debug.Log($"num points in resources map {_resourcesMap.Count}");
     }
 
     private void CreateSprite()

@@ -87,6 +87,8 @@ public class PerlinNoiseDisplay : MonoBehaviour
         _perlinNoiseShader.SetFloat("Persistance", _noiseParameters.persistance);
         _perlinNoiseShader.SetFloat("Lacunarity", _noiseParameters.lacunarity);
 
+        _perlinNoiseShader.SetInt("Seed", _noiseParameters.seed);
+
         _perlinNoiseShader.SetTexture(0, "OutputTexture", _noiseTexture);
     }
 

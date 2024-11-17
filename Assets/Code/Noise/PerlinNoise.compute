@@ -10,6 +10,7 @@ cbuffer NoiseSettings : register(b0)
     int Octaves;
     float Persistance;
     float Lacunarity;
+    float Seed;
 }
 
 RWTexture2D<float4> OutputTexture : register(u0);
@@ -24,9 +25,9 @@ float Fade(float t)
     return t * t * t * (t * (t * 6 - 15) + 10);
 }
 
-float2 gradient(float2 p)
+float2 gradient(float2 p, float seed)
 {
-    float angle = frac(sin(dot(p, float2(127.1, 311.7))) * 43758.5453) * 6.28318530718; // 2 * PI
+    float angle = frac(sin(dot(p, float2(127.1, 311.7)) + seed) * 43758.5453) * 6.28318530718; // 2 * PI
     return float2(cos(angle), sin(angle));
 }
 
@@ -35,15 +36,20 @@ float NormalizeNoiseValue(float value)
     return (value + 0.3) / 0.6;
 }
 
-float PerlinNoise(float2 p)
+float Random(float2 st)
+{
+    return frac(sin(dot(st.xy, float2(12.9898, 78.233))) * 43758.5453123);
+}
+
+float PerlinNoise(float2 p, float seed)
 {
     float2 ip = floor(p);
     float2 fp = frac(p);
 
-    float2 g00 = gradient(ip);
-    float2 g10 = gradient(ip + float2(1.0, 0.0));
-    float2 g01 = gradient(ip + float2(0.0, 1.0));
-    float2 g11 = gradient(ip + float2(1.0, 1.0));
+    float2 g00 = gradient(ip, seed);
+    float2 g10 = gradient(ip + float2(1.0, 0.0), seed);
+    float2 g01 = gradient(ip + float2(0.0, 1.0), seed);
+    float2 g11 = gradient(ip + float2(1.0, 1.0), seed);
     
     float2 d00 = fp - float2(0.0, 0.0);
     float2 d10 = fp - float2(1.0, 0.0);
@@ -70,7 +76,7 @@ float FractalNoise(float2 coord, int octaves)
     
     for (int i = 0; i < octaves; i++)
     {
-        noiseValue += PerlinNoise(coord * frequency) * amplitude;
+        noiseValue += PerlinNoise(coord * frequency, Seed) * amplitude;
         maxAmplitude += amplitude;
         
         amplitude *= Persistance; 

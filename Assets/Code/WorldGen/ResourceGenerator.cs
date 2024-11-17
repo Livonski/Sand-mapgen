@@ -12,7 +12,7 @@ public class ResourceGenerator : MonoBehaviour
     [SerializeField] private NoiseParameters _patchesNoise;
 
     HashSet<PointValue> _resourcesMap;
-    private float[,] _densityMap;
+    private float[] _densityMap;
 
     private Vector2Int _worldSize = Vector2Int.zero;
     private Texture2D _world;
@@ -150,17 +150,17 @@ public class ResourceGenerator : MonoBehaviour
         var possiblePointsNative = new NativeList<PossiblePoint>(totalSize, Allocator.TempJob);
 
         //TODO fix this
-        float[] densityMap = new float[totalSize];
+        /*float[] densityMap = new float[totalSize];
         for (int y = 0; y < _worldSize.y; y++)
         {
             for (int x = 0; x < _worldSize.x; x++)
             {
                 densityMap[y * _worldSize.x + x] = _densityMap[x, y];
             }
-        }
+        }*/
 
         worldNative.CopyFrom(_world.GetPixels());
-        densityMapNative.CopyFrom(densityMap);
+        densityMapNative.CopyFrom(_densityMap);
         possibleValuesNative.CopyFrom(resource.preferedBiomesColors);
 
         var job = new CalculatePossiblePointsJob
@@ -203,13 +203,13 @@ public class ResourceGenerator : MonoBehaviour
     private void InitializeMaps()
     {
         _resourcesMap = new HashSet<PointValue>();
-        _densityMap = new float[_worldSize.x, _worldSize.y];
+        _densityMap = new float[_worldSize.x * _worldSize.y];
 
         for (int y = 0; y < _worldSize.y; y++)
         {
             for (int x = 0; x < _worldSize.x; x++)
             {
-                _densityMap[x, y] = 0;
+                _densityMap[y * _worldSize.x + x] = 0;
             }
         }
 
@@ -224,8 +224,8 @@ public class ResourceGenerator : MonoBehaviour
                 if (x > 0 && x < _worldSize.x && y > 0 && y < _worldSize.y)
                 {
                     float strength = 1 - Vector2Int.Distance(position, new Vector2Int(x, y)) / radius;
-                    strength = Mathf.Clamp01(strength + _densityMap[x, y]);
-                    _densityMap[x,y] = strength;
+                    strength = Mathf.Clamp01(strength + _densityMap[y * _worldSize.x + x]);
+                    _densityMap[y * _worldSize.x + x] = strength;
                 }
             }
         }
