@@ -12,6 +12,7 @@ public class ResourceGenerator : MonoBehaviour
     [SerializeField] private NoiseParameters _patchesNoise;
 
     HashSet<PointValue> _resourcesMap;
+    Dictionary<string[], List<PossiblePoint>> _possiblePoints;
     private float[] _densityMap;
 
     private Vector2Int _worldSize = Vector2Int.zero;
@@ -50,6 +51,8 @@ public class ResourceGenerator : MonoBehaviour
 
         float avgPatchGenTime = 0;
         int totalPatchesGenerated = 0;
+
+        _possiblePoints = new Dictionary<string[], List<PossiblePoint>>();
 
         foreach (var resource in _resources)
         {
@@ -109,8 +112,16 @@ public class ResourceGenerator : MonoBehaviour
     {
         Vector2Int[] points = new Vector2Int[resource.numPatches];
 
-        List<PossiblePoint> possiblePoints = GeneratePossiblePoints(resource);
-        //UnityEngine.Debug.Log($"number of possible points for {resource.name} {possiblePoints.Count}");
+        List<PossiblePoint> possiblePoints = new List<PossiblePoint>();
+        if (_possiblePoints.ContainsKey(resource.preferedBiomes))
+        {
+            possiblePoints = _possiblePoints[resource.preferedBiomes];
+        }
+        else
+        {
+            possiblePoints = GeneratePossiblePoints(resource);
+            _possiblePoints.Add(resource.preferedBiomes, possiblePoints);
+        }
 
         for (int i = 0; i < resource.numPatches; i++)
         {

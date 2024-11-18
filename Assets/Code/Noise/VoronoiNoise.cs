@@ -121,8 +121,18 @@ public static class VoronoiNoise
                     Vector2 nearestSeedPoint = regions[closestSeedIndex].position;
                     float distance = Vector2.Distance(queryPoint, nearestSeedPoint);
 
-                    float gradientValue = (distance / regions[closestSeedIndex].maxDistance) / 2 * (regions[closestSeedIndex].isUnderwater ? 1 : -1);
-                    gradientMap[x, y] = (regions[closestSeedIndex].isUnderwater ? 0 : 1) + gradientValue;
+                    //float gradientValue = (distance / regions[closestSeedIndex].maxDistance) / 2 * (regions[closestSeedIndex].isUnderwater ? 1 : -1);
+                    //float gradientValue = (distance / regions[closestSeedIndex].maxDistance) / 2 * (regions[closestSeedIndex].isUnderwater ? 1 : -1);
+                    float gradientValue = 0;
+                    if (regions[closestSeedIndex].isUnderwater)
+                    {
+                        gradientValue = 0.5f * (distance / regions[closestSeedIndex].maxDistance);
+                    }
+                    else
+                    {
+                        gradientValue = 0.5f * (1 - (distance / regions[closestSeedIndex].maxDistance)) / 2;
+                    }
+                    gradientMap[x, y] = (regions[closestSeedIndex].isUnderwater ? 0 : 0.5f) + gradientValue;
                 }
                 else
                 {
@@ -194,7 +204,7 @@ public static class VoronoiNoise
             Vector2 randomPosition = GetRandomWeightedPoint(weightsMap);
             float distanceToCenter = Vector2.Distance(new Vector2(width / 2, height / 2), randomPosition);
             //bool isUnderwater = i % 2 == 0;
-            bool isUnderwater = (distanceToCenter > (width / 2)) && (distanceToCenter > (height / 2));
+            bool isUnderwater = (distanceToCenter > (width / 3)) && (distanceToCenter > (height / 3));
             RegionData newRegion = new RegionData(randomPosition, float.MinValue, isUnderwater);
             regions[i] = newRegion;
         }
