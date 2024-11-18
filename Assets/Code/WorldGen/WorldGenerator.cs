@@ -245,7 +245,8 @@ public class WorldGenerator : MonoBehaviour
         Stopwatch sw = Stopwatch.StartNew();
         sw.Start();
         _heightMap = _perlinNoise.GenerateNoiseMap(_worldSize.x, _worldSize.y, _noiseParameters[0]);
-        float[,] voronoiNoiseMap = VoronoiNoise.GenerateNoiseMap(_worldSize.x, _worldSize.y, _TectonicPlatesNum, _noiseParameters[0].seed, _smoothingRadius);
+        //float[,] voronoiNoiseMap = VoronoiNoise.GenerateNoiseMap(_worldSize.x, _worldSize.y, _TectonicPlatesNum, _noiseParameters[0].seed, _smoothingRadius);
+        float[,] voronoiNoiseMap = VoronoiNoise.GenerateNoiseMap(_worldSize.x, _worldSize.y, _heightMap, _TectonicPlatesNum, _noiseParameters[0].seed, _smoothingRadius);
         for (int y = 0; y < _worldSize.y; y++)
         {
             for (int x = 0; x < _worldSize.x; x++)

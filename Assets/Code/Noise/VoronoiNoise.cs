@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using Unity.Burst;
 using UnityEngine;
@@ -21,10 +22,64 @@ public static class VoronoiNoise
             quadtree.Insert(region.position);
         }
 
+        Stopwatch sw = Stopwatch.StartNew();
+        sw.Start();
         noiseMap = CalculateRegions(width, height, quadtree, regions);
+        sw.Stop();
+        UnityEngine.Debug.Log($"Voronoi noise regions calculation: {sw.ElapsedMilliseconds} ms");
+
+        sw.Restart();
         regions = RecalculateRegions(width,height,regions,noiseMap);
+        sw.Stop();
+        UnityEngine.Debug.Log($"Voronoi noise regions recalculation: {sw.ElapsedMilliseconds} ms");
+
+        sw.Restart();
         noiseMap = CalculateGradients(width, height, noiseMap, regions);
+        sw.Stop();
+        UnityEngine.Debug.Log($"Voronoi noise gradients calculation: {sw.ElapsedMilliseconds} ms");
+
+        sw.Restart();
         noiseMap = SmoothEdges(width, height, noiseMap, smoothingRadius);
+        sw.Stop();
+        UnityEngine.Debug.Log($"Voronoi noiseedges smoothing: {sw.ElapsedMilliseconds} ms");
+
+        return noiseMap;
+    }
+
+    public static float[,] GenerateNoiseMap(int width, int height, float[,] weightsMap, int numRegions, int randomSeed, int smoothingRadius)
+    {
+        float[,] noiseMap = new float[width, height];
+
+        UnityEngine.Random.InitState(randomSeed);
+        RegionData[] regions = GenerateRandomRegions(width, height, numRegions, weightsMap);
+
+        Quadtree quadtree = new Quadtree(new Rect(0, 0, width, height));
+
+        foreach (RegionData region in regions)
+        {
+            quadtree.Insert(region.position);
+        }
+
+        Stopwatch sw = Stopwatch.StartNew();
+        sw.Start();
+        noiseMap = CalculateRegions(width, height, quadtree, regions);
+        sw.Stop();
+        UnityEngine.Debug.Log($"Voronoi noise regions calculation: {sw.ElapsedMilliseconds} ms");
+
+        sw.Restart();
+        regions = RecalculateRegions(width, height, regions, noiseMap);
+        sw.Stop();
+        UnityEngine.Debug.Log($"Voronoi noise regions recalculation: {sw.ElapsedMilliseconds} ms");
+
+        sw.Restart();
+        noiseMap = CalculateGradients(width, height, noiseMap, regions);
+        sw.Stop();
+        UnityEngine.Debug.Log($"Voronoi noise gradients calculation: {sw.ElapsedMilliseconds} ms");
+
+        sw.Restart();
+        noiseMap = SmoothEdges(width, height, noiseMap, smoothingRadius);
+        sw.Stop();
+        UnityEngine.Debug.Log($"Voronoi noiseedges smoothing: {sw.ElapsedMilliseconds} ms");
 
         return noiseMap;
     }
@@ -72,7 +127,7 @@ public static class VoronoiNoise
                 else
                 {
                     gradientMap[x, y] = 1;
-                    Debug.LogWarning($"No valid seed point found for query point ({x}, {y}). Setting pixel to fallback color.");
+                    UnityEngine.Debug.LogWarning($"No valid seed point found for query point ({x}, {y}). Setting pixel to fallback color.");
                 }
             }
         }
@@ -120,12 +175,55 @@ public static class VoronoiNoise
         for (int i = 0; i < numPoints; i++)
         {
             Vector2 randomPosition = new Vector2(UnityEngine.Random.Range(0, width), UnityEngine.Random.Range(0, height));
-            bool isUnderwater = i % 2 == 0;
+            float distanceToCenter = Vector2.Distance(new Vector2(width / 2,height / 2), randomPosition);
+            //bool isUnderwater = i % 2 == 0;
+            bool isUnderwater = (distanceToCenter > (width / 2)) && (distanceToCenter > (height / 2));
             RegionData newRegion = new RegionData(randomPosition, float.MinValue, isUnderwater);
             regions[i] = newRegion;
         }
 
         return regions;
+    }
+
+    private static RegionData[] GenerateRandomRegions(int width, int height, int numPoints, float[,] weightsMap)
+    {
+        RegionData[] regions = new RegionData[numPoints];
+
+        for (int i = 0; i < numPoints; i++)
+        {
+            Vector2 randomPosition = GetRandomWeightedPoint(weightsMap);
+            float distanceToCenter = Vector2.Distance(new Vector2(width / 2, height / 2), randomPosition);
+            //bool isUnderwater = i % 2 == 0;
+            bool isUnderwater = (distanceToCenter > (width / 2)) && (distanceToCenter > (height / 2));
+            RegionData newRegion = new RegionData(randomPosition, float.MinValue, isUnderwater);
+            regions[i] = newRegion;
+        }
+
+        return regions;
+    }
+
+    private static Vector2 GetRandomWeightedPoint(float[,] weightsMap)
+    {
+        float totalWeight = 0.0f;
+        foreach (float f in weightsMap)
+        {
+            totalWeight += f;
+        }
+
+        float rand = UnityEngine.Random.Range(0, totalWeight);
+        float cumulativeWeight = 0.0f;
+
+        for(int y = 0; y < weightsMap.GetLength(0); y++)
+        {
+            for(int x = 0; x < weightsMap.GetLength(1); x++)
+            {
+                cumulativeWeight += weightsMap[x, y];
+                if (rand <= cumulativeWeight)
+                    return new Vector2(x, y);
+            }
+        }
+
+        return Vector2Int.zero;
     }
 
     private static RegionData[] RecalculateRegions(int width, int height, RegionData[] regions, float[,] regionsMap)
