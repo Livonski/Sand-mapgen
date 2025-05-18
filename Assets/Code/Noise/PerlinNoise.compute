@@ -13,7 +13,7 @@ cbuffer NoiseSettings : register(b0)
     float Seed;
 }
 
-RWTexture2D<float4> OutputTexture : register(u0);
+RWStructuredBuffer<float> Result;
 
 float Lerp(float a, float b, float t)
 {
@@ -101,5 +101,5 @@ void CSMain(uint3 DTid : SV_DispatchThreadID)
 
     float noiseValue = FractalNoise(noiseCoord, Octaves);
     
-    OutputTexture[DTid.xy] = float4(noiseValue, noiseValue, noiseValue, 1);
+    Result[DTid.y * Width + DTid.x] = noiseValue;
 }

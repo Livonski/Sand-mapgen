@@ -1,6 +1,7 @@
 using UnityEngine;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System;
 
 public class WorldGenerator : MonoBehaviour
 {
@@ -133,14 +134,30 @@ public class WorldGenerator : MonoBehaviour
         Stopwatch sw = Stopwatch.StartNew();
         sw.Start();
 
+        int w = (int)_worldSize.x;
+        int h = (int)_worldSize.y;
+        int count = w * h;
+
+        var pixels = new Color32[count];
+
+
         for (int y = 0; y < _worldSize.y; y++)
         {
+            int rowOffset = y * w;
             for (int x = 0; x < _worldSize.x; x++)
             {
+                int idx = rowOffset + x;
 
                 Color biomeColor = EvaluateBiomes(x, y);
                 if (biomeColor != Color.clear)
-                    _world.SetPixel(x,y, biomeColor);
+                {
+                    pixels[idx] = new Color32(
+                        (byte)(Mathf.Clamp01(biomeColor.r) * 255f),
+                        (byte)(Mathf.Clamp01(biomeColor.g) * 255f),
+                        (byte)(Mathf.Clamp01(biomeColor.b) * 255f),
+                        255);
+                }
+                    //_world.SetPixel(x,y, biomeColor);
 
                 // Debug stuff
                 avgMoist += _moistureMap[x, y];
@@ -160,7 +177,9 @@ public class WorldGenerator : MonoBehaviour
                 
             }
         }
-        _world.Apply();
+
+        _world.SetPixels32(pixels);
+        _world.Apply(updateMipmaps: false, makeNoLongerReadable: false);
 
         avgTemp = avgTemp / (_worldSize.x * _worldSize.y);
         avgMoist = avgMoist / (_worldSize.x * _worldSize.y);
@@ -246,7 +265,8 @@ public class WorldGenerator : MonoBehaviour
         sw.Start();
         _heightMap = _perlinNoise.GenerateNoiseMap(_worldSize.x, _worldSize.y, _noiseParameters[0]);
         //float[,] voronoiNoiseMap = VoronoiNoise.GenerateNoiseMap(_worldSize.x, _worldSize.y, _TectonicPlatesNum, _noiseParameters[0].seed, _smoothingRadius);
-        float[,] voronoiNoiseMap = VoronoiNoise.GenerateNoiseMap(_worldSize.x, _worldSize.y, _heightMap, _TectonicPlatesNum, _noiseParameters[0].seed, _smoothingRadius);
+        //float[,] voronoiNoiseMap = VoronoiNoise.GenerateNoiseMap(_worldSize.x, _worldSize.y, _heightMap, _TectonicPlatesNum, _noiseParameters[0].seed, _smoothingRadius);
+        float[,] voronoiNoiseMap = VoronoiNoise.GenerateNoiseMap(_worldSize.x, _worldSize.y, _TectonicPlatesNum, _noiseParameters[0].seed, _smoothingRadius, _heightMap);
         for (int y = 0; y < _worldSize.y; y++)
         {
             for (int x = 0; x < _worldSize.x; x++)
@@ -276,15 +296,27 @@ public class WorldGenerator : MonoBehaviour
 
     private void GenerateOutline()
     {
-        for (int y = 0; y < _worldSize.y; y++)
+        int w = (int)_worldSize.x;
+        int h = (int)_worldSize.y;
+        int count = w * h;
+
+        Color32[] pixels = _world.GetPixels32();
+
+        for (int y = 0; y < h; y++)
         {
-            for (int x = 0; x < _worldSize.x; x++)
+            int rowOffset = y * w;
+            for (int x = 0; x < w; x++)
             {
                 if (IsOnEdge(x, y, _edgeThickness))
-                    _world.SetPixel(x, y, Color.black);
+                {
+                    int idx = rowOffset + x;
+                    pixels[idx] = new Color32(0, 0, 0, 255);
+                }
             }
         }
-        _world.Apply();
+
+        _world.SetPixels32(pixels);
+        _world.Apply(updateMipmaps: false, makeNoLongerReadable: false);
     }
 
     private bool IsOnEdge(int x, int y, int edgeThickness)
@@ -314,15 +346,38 @@ public class WorldGenerator : MonoBehaviour
 
     private void GenerateResources()
     {
-        Stopwatch sw = Stopwatch.StartNew();
-        sw.Start();
+        var sw = Stopwatch.StartNew();
+
         ResourceGenerator resourceGenerator = GetComponent<ResourceGenerator>();
         _resourcesMap = resourceGenerator.GenerateResourcesMap(_worldSize, _world);
+
+        int w = (int)_worldSize.x;
+        int h = (int)_worldSize.y;
+        int count = w * h;
+
+        Color32[] pixels = _world.GetPixels32();
+
         foreach (PointValue pv in _resourcesMap)
         {
-            _world.SetPixel(pv.position.x,pv.position.y,pv.color);
+            int x = pv.position.x;
+            int y = pv.position.y;
+            if (x < 0 || x >= w || y < 0 || y >= h)
+                continue;
+
+            int idx = y * w + x;
+            // Если pv.color — Color, преобразуем:
+            Color32 col32 = new Color32(
+                    (byte)(Mathf.Clamp01(pv.color.r) * 255f),
+                    (byte)(Mathf.Clamp01(pv.color.g) * 255f),
+                    (byte)(Mathf.Clamp01(pv.color.b) * 255f),
+                    (byte)(Mathf.Clamp01(pv.color.a) * 255f)
+                  );
+            pixels[idx] = col32;
         }
-        _world.Apply();
+
+        _world.SetPixels32(pixels);
+        _world.Apply(updateMipmaps: false, makeNoLongerReadable: false);
+
         sw.Stop();
         UnityEngine.Debug.Log($"Resources generated in {sw.ElapsedMilliseconds} ms");
         UnityEngine.Debug.Log($"num points in resources map {_resourcesMap.Count}");
@@ -332,7 +387,7 @@ public class WorldGenerator : MonoBehaviour
     {
         if (_spriteRenderer == null)
             _spriteRenderer = GetComponent<SpriteRenderer>();
-        _world = new Texture2D(_worldSize.x, _worldSize.y, TextureFormat.ARGB32, false);
+        _world = new Texture2D(_worldSize.x, _worldSize.y, TextureFormat.RGBA32, false);
         Rect spriteRect = new Rect(Vector2.zero, _worldSize);
         Vector2 pivot = new Vector2(0.5f, 0.5f);
 
@@ -341,6 +396,9 @@ public class WorldGenerator : MonoBehaviour
     }
     private void CreateSprite(float[,] map)
     {
+        Stopwatch sw = Stopwatch.StartNew();
+        sw.Start();
+
         if (_spriteRenderer == null)
             _spriteRenderer = GetComponent<SpriteRenderer>();
         _world = FArrToTexture2D(map);
@@ -349,6 +407,9 @@ public class WorldGenerator : MonoBehaviour
 
         _sprite = Sprite.Create(_world, spriteRect, pivot, _spriteRenderer.sprite.pixelsPerUnit);
         _spriteRenderer.sprite = _sprite;
+
+        sw.Stop();
+        UnityEngine.Debug.Log($"Sprite generated in {sw.ElapsedMilliseconds} ms");
     }
     private void CreateSprite(Texture2D map)
     {
@@ -363,16 +424,22 @@ public class WorldGenerator : MonoBehaviour
 
     private Texture2D FArrToTexture2D(float[,] map)
     {
-        Texture2D output = new Texture2D(_worldSize.x, _worldSize.y, TextureFormat.ARGB32, false);
-        for (int y = 0; y < _worldSize.y; y++)
+        int w = map.GetLength(0);
+        int h = map.GetLength(1);
+        int count = w * h;
+
+        var output = new Texture2D(w, h, TextureFormat.RGBAFloat, false);
+
+        var raw = new Vector4[count];
+        for (int i = 0; i < count; i++)
         {
-            for (int x = 0; x < _worldSize.x; x++)
-            {
-                Color mapColor = new Color(map[x,y], map[x, y], map[x, y]);
-                output.SetPixel(x, y, mapColor);
-            }
+            float v = map[i % w, i / w];
+            raw[i] = new Vector4(v, v, v, 1f);
         }
-        output.Apply();
+
+        output.SetPixelData(raw, 0);
+        output.Apply(updateMipmaps: false, makeNoLongerReadable: false);
+
         return output;
     }
 }

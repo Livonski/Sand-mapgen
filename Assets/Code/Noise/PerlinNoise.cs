@@ -1,39 +1,42 @@
-using System.Collections;
-using System.Collections.Generic;
+using System;
 using UnityEngine;
 
 public class PerlinNoise : MonoBehaviour
 {
     [SerializeField] private ComputeShader _perlinNoiseShader;
 
-    private Vector2Int _textureSize;
-
-    private RenderTexture _noiseTexture;
-    private Texture2D _outputTexture;
-
     private int _kernelID;
 
     public float[,] GenerateNoiseMap(int width, int height, NoiseParameters noiseParameters)
     {
-        _textureSize = new Vector2Int(width, height);
         _kernelID = _perlinNoiseShader.FindKernel("CSMain");
 
-        InitializeTexture();
-        UpdateShaderParameters(noiseParameters);
+        int count = width * height;
+        float[] noise = new float[count];
 
-        int threadGroupsX = Mathf.CeilToInt(_textureSize.x / 8.0f);
-        int threadGroupsY = Mathf.CeilToInt(_textureSize.y / 8.0f);
+        ComputeBuffer noiseBuffer = new ComputeBuffer(count, sizeof(float));
+        noiseBuffer.SetData(noise);
+
+        _perlinNoiseShader.SetBuffer(_kernelID, "Result", noiseBuffer);
+
+        UpdateShaderParameters(width, height, noiseParameters);
+
+        int threadGroupsX = Mathf.CeilToInt(width / 8);
+        int threadGroupsY = Mathf.CeilToInt(height / 8);
 
         _perlinNoiseShader.Dispatch(_kernelID, threadGroupsX, threadGroupsY, 1);
-        CopyRenderTextureToTexture2D();
-        float[,] output = Texture2DToFArr(_outputTexture);
-        return output;
+        float[,] result = new float[width, height];
+        float[] flat = new float[count];
+        noiseBuffer.GetData(flat);
+        noiseBuffer.Release();
+        Buffer.BlockCopy(flat, 0, result, 0, count * sizeof(float));
+        return result;
     }
 
-    private void UpdateShaderParameters(NoiseParameters noiseParameters)
+    private void UpdateShaderParameters(int width, int height, NoiseParameters noiseParameters)
     {
-        _perlinNoiseShader.SetInt("Width", _textureSize.x);
-        _perlinNoiseShader.SetInt("Height", _textureSize.y);
+        _perlinNoiseShader.SetInt("Width", width);
+        _perlinNoiseShader.SetInt("Height", height);
 
         _perlinNoiseShader.SetFloat("Scale", noiseParameters.scale);
         _perlinNoiseShader.SetFloat("OffsetX", noiseParameters.offset.x);
@@ -45,39 +48,5 @@ public class PerlinNoise : MonoBehaviour
         _perlinNoiseShader.SetFloat("Lacunarity", noiseParameters.lacunarity);
 
         _perlinNoiseShader.SetInt("Seed", noiseParameters.seed);
-
-        _perlinNoiseShader.SetTexture(0, "OutputTexture", _noiseTexture);
-    }
-
-    private void InitializeTexture()
-    {
-        _noiseTexture = new RenderTexture(_textureSize.x, _textureSize.y, 0, RenderTextureFormat.ARGB32);
-        _noiseTexture.enableRandomWrite = true;
-        _noiseTexture.Create();
-
-        _outputTexture = new Texture2D(_textureSize.x, _textureSize.y, TextureFormat.ARGB32, false);
-
-        _perlinNoiseShader.SetTexture(_kernelID, "OutputTexture", _noiseTexture);
-    }
-
-    private void CopyRenderTextureToTexture2D()
-    {
-        RenderTexture.active = _noiseTexture;
-        _outputTexture.ReadPixels(new Rect(0, 0, _textureSize.x, _textureSize.y), 0, 0);
-        _outputTexture.Apply();
-        RenderTexture.active = null;
-    }
-
-    private float[,] Texture2DToFArr(Texture2D map)
-    {
-        float[,] output = new float[map.width, map.height];
-        for (int y = 0; y < map.height; y++)
-        {
-            for (int x = 0; x < map.width; x++)
-            {
-                output[x,y] = map.GetPixel(x, y).r;
-            }
-        }
-        return output;
     }
 }
