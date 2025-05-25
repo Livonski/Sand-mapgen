@@ -4,192 +4,223 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using Unity.Burst;
+using Unity.Collections;
+using Unity.Jobs;
+using Unity.Mathematics;
 using UnityEngine;
 
 public static class VoronoiNoise
 {
-    public static float[,] GenerateNoiseMap(int width, int height, int numRegions, int randomSeed, int smoothingRadius)
-    {
-        float[,] noiseMap = new float[width, height];
+    private const int QuadtreeSubdivisionThreshold = 10;
+    private const float QuadtreeOverlap = 0f;
 
+    public static float[,] GenerateNoiseMap(
+        int width,
+        int height,
+        int numRegions,
+        int randomSeed,
+        int smoothingRadius,
+        float[,] weightsMap = null)
+    {
         UnityEngine.Random.InitState(randomSeed);
-        RegionData[] regions = GenerateRandomRegions(width,height,numRegions);
 
-        Quadtree quadtree = new Quadtree(new Rect(0, 0, width, height));
+        // Generate seed regions
+        RegionData[] regions = (weightsMap == null)
+            ? GenerateRandomRegions(width, height, numRegions)
+            : GenerateRandomRegions(width, height, numRegions, weightsMap);
 
-        foreach (RegionData region in regions)
+        int totalPixels = width * height;
+        var seedPositions = new NativeArray<float2>(numRegions, Allocator.TempJob);
+        var regionMap1D = new NativeArray<int>(totalPixels, Allocator.TempJob);
+
+        // Copy seed positions to native array
+        for (int i = 0; i < numRegions; i++)
+            seedPositions[i] = new float2(regions[i].position.x, regions[i].position.y);
+
+        // Schedule region assignment job (parallel nearest seed)
+        var sw = Stopwatch.StartNew();
+        var regionJob = new CalculateRegionsJob
         {
-            quadtree.Insert(region.position);
+            width = width,
+            height = height,
+            seedPositions = seedPositions,
+            regionMap = regionMap1D
+        };
+        JobHandle handle = regionJob.Schedule(totalPixels, 256);
+        handle.Complete();
+        sw.Stop();
+#if UNITY_EDITOR
+        UnityEngine.Debug.Log($"[Voronoi] Regions in {sw.ElapsedMilliseconds} ms (parallel)");
+#endif
+
+        // Copy back to managed arrays
+        int[,] regionMap = new int[width, height];
+        for (int idx = 0; idx < totalPixels; idx++)
+        {
+            int x = idx % width;
+            int y = idx / width;
+            regionMap[x, y] = regionMap1D[idx];
         }
 
-        Stopwatch sw = Stopwatch.StartNew();
-        sw.Start();
-        noiseMap = CalculateRegions(width, height, quadtree, regions);
-        sw.Stop();
-        UnityEngine.Debug.Log($"Voronoi noise regions calculation: {sw.ElapsedMilliseconds} ms");
-
-        sw.Restart();
-        regions = RecalculateRegions(width,height,regions,noiseMap);
-        sw.Stop();
-        UnityEngine.Debug.Log($"Voronoi noise regions recalculation: {sw.ElapsedMilliseconds} ms");
-
-        sw.Restart();
-        noiseMap = CalculateGradients(width, height, noiseMap, regions);
-        sw.Stop();
-        UnityEngine.Debug.Log($"Voronoi noise gradients calculation: {sw.ElapsedMilliseconds} ms");
-
-        sw.Restart();
-        noiseMap = SmoothEdges(width, height, noiseMap, smoothingRadius);
-        sw.Stop();
-        UnityEngine.Debug.Log($"Voronoi noiseedges smoothing: {sw.ElapsedMilliseconds} ms");
-
-        return noiseMap;
-    }
-
-    public static float[,] GenerateNoiseMap(int width, int height, float[,] weightsMap, int numRegions, int randomSeed, int smoothingRadius)
-    {
-        float[,] noiseMap = new float[width, height];
-
-        UnityEngine.Random.InitState(randomSeed);
-        RegionData[] regions = GenerateRandomRegions(width, height, numRegions, weightsMap);
-
-        Quadtree quadtree = new Quadtree(new Rect(0, 0, width, height));
-
-        foreach (RegionData region in regions)
-        {
-            quadtree.Insert(region.position);
-        }
-
-        Stopwatch sw = Stopwatch.StartNew();
-        sw.Start();
-        noiseMap = CalculateRegions(width, height, quadtree, regions);
-        sw.Stop();
-        UnityEngine.Debug.Log($"Voronoi noise regions calculation: {sw.ElapsedMilliseconds} ms");
-
-        sw.Restart();
-        regions = RecalculateRegions(width, height, regions, noiseMap);
-        sw.Stop();
-        UnityEngine.Debug.Log($"Voronoi noise regions recalculation: {sw.ElapsedMilliseconds} ms");
-
-        sw.Restart();
-        noiseMap = CalculateGradients(width, height, noiseMap, regions);
-        sw.Stop();
-        UnityEngine.Debug.Log($"Voronoi noise gradients calculation: {sw.ElapsedMilliseconds} ms");
-
-        sw.Restart();
-        noiseMap = SmoothEdges(width, height, noiseMap, smoothingRadius);
-        sw.Stop();
-        UnityEngine.Debug.Log($"Voronoi noiseedges smoothing: {sw.ElapsedMilliseconds} ms");
-
-        return noiseMap;
-    }
-
-    private static float[,] CalculateRegions(int width, int height, Quadtree quadtree, RegionData[] regions)
-    {
-        float[,] regionsMap = new float[width, height];
-
+        // Compute maxDistances per region on main thread
+        //foreach (var region in regions) region.maxDistance = 0f; // reset
         for (int y = 0; y < height; y++)
-        {
             for (int x = 0; x < width; x++)
             {
-                Vector2 queryPoint = new Vector2(x, y);
-                Vector2 nearestSeedPoint = quadtree.FindNearest(queryPoint);
-                int closestSeedIndex = FindIndex(regions, nearestSeedPoint);
-
-                float distanceToPoint = Vector2.Distance(queryPoint, nearestSeedPoint);
-                regions[closestSeedIndex].maxDistance = Mathf.Max(distanceToPoint, regions[closestSeedIndex].maxDistance);
-                regionsMap[x, y] = closestSeedIndex;
+                int i = regionMap[x, y];
+                float dx = x - regions[i].position.x;
+                float dy = y - regions[i].position.y;
+                float d = Mathf.Sqrt(dx * dx + dy * dy);
+                if (d > regions[i].maxDistance)
+                    regions[i].maxDistance = d;
             }
-        }
 
-        return regionsMap;
+        // Dispose native arrays
+        seedPositions.Dispose();
+        regionMap1D.Dispose();
+
+        // Recenter and subsequent steps
+        sw.Restart();
+        regions = RecalculateRegions(width, height, regions, regionMap);
+        sw.Stop();
+#if UNITY_EDITOR
+        UnityEngine.Debug.Log($"[Voronoi] Recenter in {sw.ElapsedMilliseconds} ms");
+#endif
+
+        sw.Restart();
+        float[,] gradients = CalculateGradients(width, height, regionMap, regions);
+        sw.Stop();
+#if UNITY_EDITOR
+        UnityEngine.Debug.Log($"[Voronoi] Gradients in {sw.ElapsedMilliseconds} ms");
+#endif
+
+        sw.Restart();
+        float[,] smoothed = SmoothWithIntegral(gradients, width, height, smoothingRadius);
+        sw.Stop();
+#if UNITY_EDITOR
+        UnityEngine.Debug.Log($"[Voronoi] Smoothed in {sw.ElapsedMilliseconds} ms");
+#endif
+
+        return smoothed;
     }
 
-    private static float[,] CalculateGradients(int width, int height, float[,] regionMap, RegionData[] regions)
+    #region Region Assignment Job
+
+    [BurstCompile]
+    private struct CalculateRegionsJob : IJobParallelFor
     {
-        float[,] gradientMap = new float[width, height];
+        public int width;
+        public int height;
+        [ReadOnly] public NativeArray<float2> seedPositions;
+        public NativeArray<int> regionMap;
 
-        for (int y = 0; y < height; y++)
+        public void Execute(int idx)
         {
-            for (int x = 0; x < width; x++)
+            int x = idx % width;
+            int y = idx / width;
+            float2 p = new float2(x, y);
+
+            int bestIndex = 0;
+            float bestDistSqr = math.distancesq(p, seedPositions[0]);
+            for (int i = 1; i < seedPositions.Length; i++)
             {
-                int closestSeedIndex = (int)regionMap[x, y];
-
-                if (closestSeedIndex != -1)
+                float d2 = math.distancesq(p, seedPositions[i]);
+                if (d2 < bestDistSqr)
                 {
-                    Vector2 queryPoint = new Vector2(x, y);
-                    Vector2 nearestSeedPoint = regions[closestSeedIndex].position;
-                    float distance = Vector2.Distance(queryPoint, nearestSeedPoint);
-
-                    //float gradientValue = (distance / regions[closestSeedIndex].maxDistance) / 2 * (regions[closestSeedIndex].isUnderwater ? 1 : -1);
-                    //float gradientValue = (distance / regions[closestSeedIndex].maxDistance) / 2 * (regions[closestSeedIndex].isUnderwater ? 1 : -1);
-                    float gradientValue = 0;
-                    if (regions[closestSeedIndex].isUnderwater)
-                    {
-                        gradientValue = 0.5f * (distance / regions[closestSeedIndex].maxDistance);
-                    }
-                    else
-                    {
-                        gradientValue = 0.5f * (1 - (distance / regions[closestSeedIndex].maxDistance)) / 2;
-                    }
-                    gradientMap[x, y] = (regions[closestSeedIndex].isUnderwater ? 0 : 0.5f) + gradientValue;
-                }
-                else
-                {
-                    gradientMap[x, y] = 1;
-                    UnityEngine.Debug.LogWarning($"No valid seed point found for query point ({x}, {y}). Setting pixel to fallback color.");
-                }
-            }
-        }
-
-        return gradientMap;
-    }
-
-    private static float[,] SmoothEdges(int width, int height, float[,] noiseMap, int smoothingRadius)
-    {
-        float[,] smoothedNoise = new float[width, height];
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                smoothedNoise[x,y] = AverageValue(width, height, noiseMap, x, y, smoothingRadius);
-            }
-        }
-
-        return smoothedNoise;
-    }
-
-    private static float AverageValue(int width, int height, float[,] noiseMap, int posX, int posY, int smoothingRadius)
-    {
-        float averageValue = 0;
-        float numPixels = 0;
-        for(int y = posY - smoothingRadius; y < posY + smoothingRadius; y++)
-        {
-            for (int x = posX - smoothingRadius; x < posX + smoothingRadius; x++)
-            {
-                if(x < width && y < height && x > 0 && y > 0)
-                {
-                    averageValue += noiseMap[x, y];
-                    numPixels++;
+                    bestDistSqr = d2;
+                    bestIndex = i;
                 }
             }
+            regionMap[idx] = bestIndex;
         }
-        averageValue = averageValue / numPixels;
-        return averageValue;
     }
+
+    #endregion
+
+    #region Gradient Calculation
+
+    private static float[,] CalculateGradients(int w, int h, int[,] map, RegionData[] regs)
+    {
+        float[,] grad = new float[w, h];
+        for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++)
+            {
+                int i = map[x, y];
+                var r = regs[i];
+                float maxD = r.maxDistance > 0f ? r.maxDistance : 1f;
+                float dx = x - r.position.x;
+                float dy = y - r.position.y;
+                float d2 = dx * dx + dy * dy;
+                float normalized = Mathf.Sqrt(d2) / maxD;
+                grad[x, y] = r.isUnderwater
+                    ? 0.5f * normalized
+                    : 0.5f + 0.25f * (1f - normalized);
+            }
+        return grad;
+    }
+
+    #endregion
+
+    #region Edge Smoothing
+
+    private static float[,] SmoothWithIntegral(float[,] src, int w, int h, int r)
+    {
+        int iw = w + 1, ih = h + 1;
+        var integral = new float[iw, ih];
+        for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++)
+                integral[x + 1, y + 1] = src[x, y] + integral[x, y + 1] + integral[x + 1, y] - integral[x, y];
+
+        var outm = new float[w, h];
+        for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++)
+            {
+                int x0 = Math.Max(0, x - r), y0 = Math.Max(0, y - r);
+                int x1 = Math.Min(w - 1, x + r), y1 = Math.Min(h - 1, y + r);
+                int area = (x1 - x0 + 1) * (y1 - y0 + 1);
+                float sum = integral[x1 + 1, y1 + 1] - integral[x0, y1 + 1] - integral[x1 + 1, y0] + integral[x0, y0];
+                outm[x, y] = sum / area;
+            }
+        return outm;
+    }
+
+    private static float AverageValue(int width, int height, float[,] map, int cx, int cy, int r)
+    {
+        float sum = 0f;
+        int count = 0;
+
+        for (int dy = -r; dy <= r; dy++)
+        {
+            int y = cy + dy;
+            if (y < 0 || y >= height) continue;
+
+            for (int dx = -r; dx <= r; dx++)
+            {
+                int x = cx + dx;
+                if (x < 0 || x >= width) continue;
+
+                sum += map[x, y];
+                count++;
+            }
+        }
+
+        return (count > 0) ? (sum / count) : map[cx, cy];
+    }
+
+    #endregion
+
+    #region Random Region Generation
 
     private static RegionData[] GenerateRandomRegions(int width, int height, int numPoints)
     {
-        RegionData[] regions = new RegionData[numPoints];
+        var regions = new RegionData[numPoints];
+        var center = new Vector2(width / 2f, height / 2f);
 
         for (int i = 0; i < numPoints; i++)
         {
-            Vector2 randomPosition = new Vector2(UnityEngine.Random.Range(0, width), UnityEngine.Random.Range(0, height));
-            float distanceToCenter = Vector2.Distance(new Vector2(width / 2,height / 2), randomPosition);
-            //bool isUnderwater = i % 2 == 0;
-            bool isUnderwater = (distanceToCenter > (width / 2)) && (distanceToCenter > (height / 2));
-            RegionData newRegion = new RegionData(randomPosition, float.MinValue, isUnderwater);
-            regions[i] = newRegion;
+            var pos = new Vector2(UnityEngine.Random.Range(0f, width), UnityEngine.Random.Range(0f, height));
+            bool underwater = Vector2.Distance(pos, center) > Mathf.Max(width, height) / 2f;
+            regions[i] = new RegionData(pos, 0f, underwater);
         }
 
         return regions;
@@ -197,182 +228,168 @@ public static class VoronoiNoise
 
     private static RegionData[] GenerateRandomRegions(int width, int height, int numPoints, float[,] weightsMap)
     {
-        RegionData[] regions = new RegionData[numPoints];
+        var regions = new RegionData[numPoints];
+        var center = new Vector2(width / 2f, height / 2f);
+
+        float totalWeight = weightsMap.Cast<float>().Sum();
 
         for (int i = 0; i < numPoints; i++)
         {
-            Vector2 randomPosition = GetRandomWeightedPoint(weightsMap);
-            float distanceToCenter = Vector2.Distance(new Vector2(width / 2, height / 2), randomPosition);
-            //bool isUnderwater = i % 2 == 0;
-            bool isUnderwater = (distanceToCenter > (width / 3)) && (distanceToCenter > (height / 3));
-            RegionData newRegion = new RegionData(randomPosition, float.MinValue, isUnderwater);
-            regions[i] = newRegion;
+            regions[i] = new RegionData(GetRandomWeightedPoint(weightsMap, totalWeight), 0f,
+                Vector2.Distance(regions[i].position, center) > Mathf.Max(width, height) / 3f);
         }
 
         return regions;
     }
 
-    private static Vector2 GetRandomWeightedPoint(float[,] weightsMap)
+    private static Vector2 GetRandomWeightedPoint(float[,] weights, float totalWeight)
     {
-        float totalWeight = 0.0f;
-        foreach (float f in weightsMap)
-        {
-            totalWeight += f;
-        }
+        float r = UnityEngine.Random.Range(0f, totalWeight);
+        float cum = 0f;
 
-        float rand = UnityEngine.Random.Range(0, totalWeight);
-        float cumulativeWeight = 0.0f;
+        int maxX = weights.GetLength(0);
+        int maxY = weights.GetLength(1);
 
-        for(int y = 0; y < weightsMap.GetLength(0); y++)
+        for (int x = 0; x < maxX; x++)
         {
-            for(int x = 0; x < weightsMap.GetLength(1); x++)
+            for (int y = 0; y < maxY; y++)
             {
-                cumulativeWeight += weightsMap[x, y];
-                if (rand <= cumulativeWeight)
+                cum += weights[x, y];
+                if (r <= cum)
                     return new Vector2(x, y);
             }
         }
-
-        return Vector2Int.zero;
+        return Vector2.zero;
     }
 
-    private static RegionData[] RecalculateRegions(int width, int height, RegionData[] regions, float[,] regionsMap)
+    #endregion
+
+    #region Region Recentering
+
+    private static RegionData[] RecalculateRegions(int width, int height, RegionData[] regions, int[,] regionMap)
     {
-        Cell[] cells = new Cell[regions.Length];
-        for (int i = 0; i < regions.Length; i++)
-        {
-            cells[i] = new Cell();
-            cells[i].points = new List<Vector2>();
-        }
+        int num = regions.Length;
+        var cells = new List<Vector2>[num];
+        for (int i = 0; i < num; i++) cells[i] = new List<Vector2>();
 
         for (int y = 0; y < height; y++)
-        {
             for (int x = 0; x < width; x++)
-            {
-                int id = (int)regionsMap[x,y];
-                cells[id].points.Add(new Vector2(x, y));
-            }
-        }
+                cells[regionMap[x, y]].Add(new Vector2(x, y));
 
-        for (int i = 0; i < regions.Length; i++)
+        for (int i = 0; i < num; i++)
         {
-            float centerX = cells[i].points.Average(p => p.x);
-            float centerY = cells[i].points.Average(p => p.y);
-            regions[i].position = new Vector2(centerX, centerY);
+            var pts = cells[i];
+            if (pts.Count == 0) continue;
 
-            float maxDistance = float.MinValue;
-            foreach (Vector2 point in cells[i].points)
-            {
-                float distance = Vector2.Distance(point, regions[i].position);
-                maxDistance = Math.Max(maxDistance, distance);
-            }
-            regions[i].maxDistance = maxDistance;
+            // compute centroid
+            float cx = pts.Average(p => p.x);
+            float cy = pts.Average(p => p.y);
+            var center = new Vector2(cx, cy);
+
+            // recompute max distance
+            float maxD = pts.Max(p => Vector2.Distance(p, center));
+            regions[i] = new RegionData(center, maxD, regions[i].isUnderwater);
         }
+
         return regions;
     }
 
-    private static int FindIndex(RegionData[] regionData, Vector2 position)
-    {
-        int index = -1;
-        for (int i = 0; i < regionData.Length; i++)
-        {
-            if (regionData[i].position == position)
-                return i;
-        }
-        return index;
-    }
+    #endregion
 }
+
 
 public class Quadtree
 {
-    private Node root;
+    private readonly Node root;
+    private readonly int QuadtreeSubdivisionThreshold;
 
-    public Quadtree(Rect bounds)
+    public Quadtree(Rect bounds, int quadtreeSubdivisionThreshold)
     {
         root = new Node(bounds);
+        QuadtreeSubdivisionThreshold = quadtreeSubdivisionThreshold;
     }
 
-    public void Insert(Vector2 point)
+    public void Insert(Vector2 point, int regionIndex)
     {
-        root.Insert(point);
+        root.Insert(new PointIndex(point, regionIndex), QuadtreeSubdivisionThreshold);
     }
 
-    public Vector2 FindNearest(Vector2 queryPoint)
+    public int FindNearestRegion(Vector2 queryPoint)
     {
-        var nearest = root.FindNearest(queryPoint, float.MaxValue);
-        if (nearest != null)
-        {
-            return nearest.Value;
-        }
-        throw new Exception("No nearest point found, even after backtracking.");
+        var found = root.FindNearest(queryPoint, float.MaxValue);
+        if (found.HasValue)
+            return found.Value.regionIndex;
+        throw new Exception("No nearest point found in quadtree.");
+    }
+
+    private struct PointIndex
+    {
+        public Vector2 pos; public int regionIndex;
+        public PointIndex(Vector2 p, int i) { pos = p; regionIndex = i; }
     }
 
     private class Node
     {
         public Rect bounds;
-        public List<Vector2> points = new List<Vector2>();
+        public List<PointIndex> points = new List<PointIndex>();
         public Node[] children;
 
-        public Node(Rect bounds)
-        {
-            this.bounds = bounds;
-        }
+        public Node(Rect b) => bounds = b;
 
         public void Subdivide()
         {
-            float halfWidth = bounds.width / 2;
-            float halfHeight = bounds.height / 2;
-            float overlap = 0.01f;  // Small overlap to prevent edge issues
+            float hx = bounds.width / 2f;
+            float hy = bounds.height / 2f;
             children = new Node[4];
-            children[0] = new Node(new Rect(bounds.x - overlap, bounds.y - overlap, halfWidth + overlap, halfHeight + overlap));
-            children[1] = new Node(new Rect(bounds.x + halfWidth, bounds.y - overlap, halfWidth + overlap, halfHeight + overlap));
-            children[2] = new Node(new Rect(bounds.x - overlap, bounds.y + halfHeight, halfWidth + overlap, halfHeight + overlap));
-            children[3] = new Node(new Rect(bounds.x + halfWidth, bounds.y + halfHeight, halfWidth + overlap, halfHeight + overlap));
+            children[0] = new Node(new Rect(bounds.x, bounds.y, hx, hy));
+            children[1] = new Node(new Rect(bounds.x + hx, bounds.y, hx, hy));
+            children[2] = new Node(new Rect(bounds.x, bounds.y + hy, hx, hy));
+            children[3] = new Node(new Rect(bounds.x + hx, bounds.y + hy, hx, hy));
         }
 
-        public void Insert(Vector2 point)
+        public void Insert(PointIndex pi, int quadtreeSubdivisionThreshold)
         {
             if (children != null)
             {
-                // Determine which child node the point should go into
-                int index = (point.x >= bounds.x + bounds.width / 2 ? 1 : 0) +
-                            (point.y >= bounds.y + bounds.height / 2 ? 2 : 0);
-                children[index].Insert(point);
+                int idx = (pi.pos.x >= bounds.x + bounds.width / 2f ? 1 : 0) +
+                          (pi.pos.y >= bounds.y + bounds.height / 2f ? 2 : 0);
+                children[idx].Insert(pi, quadtreeSubdivisionThreshold);
             }
             else
             {
-                points.Add(point);
-                if (points.Count > 1 && bounds.width > 10)  // Threshold to prevent over subdivision
+                points.Add(pi);
+                if (points.Count > 1 && bounds.width > quadtreeSubdivisionThreshold)
                 {
                     Subdivide();
                     foreach (var p in points)
-                    {
-                        Insert(p);
-                    }
+                        Insert(p, quadtreeSubdivisionThreshold);
                     points.Clear();
                 }
             }
         }
 
-        public Vector2? FindNearest(Vector2 queryPoint, float minDist)
+        public PointIndex? FindNearest(Vector2 queryPoint, float bestDist)
         {
-            Vector2? nearest = null;
-            float nearestDist = minDist;
+            PointIndex? best = null;
+            float bestSqr = bestDist * bestDist;
 
+            // search children first if exist
             if (children != null)
             {
-                foreach (var child in children)
+                foreach (var c in children)
                 {
-                    if (child != null && SquaredDistanceToRect(child.bounds, queryPoint) < nearestDist * nearestDist)
+                    if (c == null) continue;
+                    float sq = SquaredDistanceToRect(c.bounds, queryPoint);
+                    if (sq < bestSqr)
                     {
-                        Vector2? candidate = child.FindNearest(queryPoint, nearestDist);
-                        if (candidate.HasValue)
+                        var cand = c.FindNearest(queryPoint, Mathf.Sqrt(bestSqr));
+                        if (cand.HasValue)
                         {
-                            float dist = Vector2.Distance(queryPoint, candidate.Value);
-                            if (dist < nearestDist)
+                            float candDist = Vector2.SqrMagnitude(cand.Value.pos - queryPoint);
+                            if (candDist < bestSqr)
                             {
-                                nearest = candidate;
-                                nearestDist = dist;
+                                bestSqr = candDist;
+                                best = cand;
                             }
                         }
                     }
@@ -380,24 +397,24 @@ public class Quadtree
             }
             else
             {
-                foreach (var point in points)
+                foreach (var p in points)
                 {
-                    float dist = Vector2.Distance(queryPoint, point);
-                    if (dist < nearestDist)
+                    float d2 = Vector2.SqrMagnitude(p.pos - queryPoint);
+                    if (d2 < bestSqr)
                     {
-                        nearest = point;
-                        nearestDist = dist;
+                        bestSqr = d2;
+                        best = p;
                     }
                 }
             }
 
-            return nearest;
+            return best;
         }
 
-        public static float SquaredDistanceToRect(Rect rect, Vector2 point)
+        public static float SquaredDistanceToRect(Rect rect, Vector2 pt)
         {
-            float dx = Mathf.Max(rect.xMin - point.x, 0, point.x - rect.xMax);
-            float dy = Mathf.Max(rect.yMin - point.y, 0, point.y - rect.yMax);
+            float dx = Math.Max(Math.Max(rect.xMin - pt.x, 0f), pt.x - rect.xMax);
+            float dy = Math.Max(Math.Max(rect.yMin - pt.y, 0f), pt.y - rect.yMax);
             return dx * dx + dy * dy;
         }
     }
@@ -409,11 +426,11 @@ public struct RegionData
     public float maxDistance;
     public bool isUnderwater;
 
-    public RegionData(Vector2 position, float maxDistance, bool isUnderwater)
+    public RegionData(Vector2 pos, float maxDist, bool underwater)
     {
-        this.position = position;
-        this.maxDistance = maxDistance;
-        this.isUnderwater = isUnderwater;
+        position = pos;
+        maxDistance = maxDist;
+        isUnderwater = underwater;
     }
 }
 

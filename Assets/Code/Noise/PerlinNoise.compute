@@ -33,7 +33,9 @@ float2 gradient(float2 p, float seed)
 
 float NormalizeNoiseValue(float value)
 {
-    return (value + 0.3) / 0.6;
+    float n = value * 0.5 + 0.5;
+    //return n;
+    return saturate(n);
 }
 
 float Random(float2 st)
@@ -84,9 +86,7 @@ float FractalNoise(float2 coord, int octaves)
     }
     
     noiseValue /= maxAmplitude;
-    return NormalizeNoiseValue(noiseValue);
-    return noiseValue;
-    
+    return NormalizeNoiseValue(noiseValue); 
 }
 
 
